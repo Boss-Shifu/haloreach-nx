@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <strings.h>
 #include <string_view>
 
 struct StaticRexModuleEntry {
