@@ -15,9 +15,13 @@ IV = "00" * 16
 
 
 def _aes_cbc_decrypt(key_hex, data):
-    return subprocess.run(
-        ["openssl", "enc", "-d", "-aes-128-cbc", "-nopad", "-K", key_hex, "-iv", IV],
-        input=data, stdout=subprocess.PIPE, check=True).stdout
+    try:
+        from Crypto.Cipher import AES
+        return AES.new(bytes.fromhex(key_hex), AES.MODE_CBC, b"\x00" * 16).decrypt(data)
+    except ImportError:
+        return subprocess.run(
+            ["openssl", "enc", "-d", "-aes-128-cbc", "-nopad", "-K", key_hex, "-iv", IV],
+            input=data, stdout=subprocess.PIPE, check=True).stdout
 
 
 def load(path):

@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.patch text eol=lf
+*.toml text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.xex binary
+*.dll binary
+*.jpg binary
+*.png binary
