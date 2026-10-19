@@ -28,19 +28,13 @@ class HaloReachApp : public rex::ReXApp {
 
   void OnConfigurePaths(rex::PathConfig& paths) override {
 #if defined(REX_PLATFORM_SWITCH) || defined(__SWITCH__)
-    // En Nintendo Switch buscamos game_root junto al NRO o en sdmc:/switch/HaloReach/game_root
+    // newlib no considera "sdmc:/..." como ruta absoluta y el SDK le antepone la
+    // carpeta del NRO (sdmc:/switch/HaloReach/sdmc:/...). Usar rutas relativas al NRO.
     if (paths.game_data_root.empty()) {
-      const std::filesystem::path sd_path = "sdmc:/switch/HaloReach/game_root";
-      const std::filesystem::path rel_path = "game_root";
-      if (std::filesystem::exists(sd_path)) {
-        paths.game_data_root = sd_path;
-      } else if (std::filesystem::exists(rel_path)) {
-        paths.game_data_root = rel_path;
-      }
+      paths.game_data_root = "game_root";
     }
-    if (paths.user_data_root.empty()) {
-      paths.user_data_root = "sdmc:/switch/HaloReach/userdata";
-    }
+    paths.user_data_root = "userdata";
+    paths.cache_root = "userdata/cache";
 #endif
   }
 
