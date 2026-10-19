@@ -9,28 +9,28 @@ game_root = "../assets/game_root"
 [entrypoint]
 file_path = "../assets/game_root/default.xex"
 out_directory_path = "generated/default"
-includes = ["overrides.toml"]
+includes = ["overrides.toml", "config/default_auto.toml", "config/default_xapi.toml", "config/default_switch.toml"]
 
 [[modules]]
 guest_path = "waveshell-xbox.dll"
 file_path = "../assets/game_root/WaveShell-Xbox.dll"
 out_directory_path = "generated/waveshell_xbox"
-includes = ["overrides_waveshell.toml"]
+includes = ["overrides_waveshell.toml", "config/waveshell-xbox_auto.toml"]
 
 [[modules]]
 guest_path = "waveslibdll.dll"
 file_path = "../assets/game_root/WavesLibDLL.dll"
 out_directory_path = "generated/waveslibdll"
-includes = ["overrides_waveslib.toml"]
+includes = ["overrides_waveslib.toml", "config/waveslibdll_auto.toml"]
 
 [[modules]]
 guest_path = "l360.dll"
 file_path = "../assets/game_root/waves/L360.dll"
 out_directory_path = "generated/l360"
-includes = ["overrides_l360.toml"]
+includes = ["overrides_l360.toml", "config/l360_auto.toml"]
 
 [[modules]]
 guest_path = "q10.dll"
 file_path = "../assets/game_root/waves/Q10.dll"
 out_directory_path = "generated/q10"
-includes = ["overrides_q10.toml"]
+includes = ["overrides_q10.toml", "config/q10_auto.toml"]
