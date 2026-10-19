@@ -80,22 +80,35 @@ void HaloReachInitHooks() {
 // ============================================================================
 // 1. Hook XMsgStartIORequest (Fuerza modo Disco para que Halo: Reach monte cache0:\)
 // ============================================================================
-REX_EXTERN(__imp__XMsgStartIORequest);
-REX_HOOK_RAW(XMsgStartIORequest) {
+// El símbolo __imp__XMsgStartIORequest queda ocupado por este hook, así que el
+// paso al SDK no puede hacerse por puntero: se llama directamente a la rutina
+// host que usa el export original (XMsgStartIORequest_entry), con los mismos
+// registros de entrada (r3..r7) y con unknown = nullptr.
+namespace rex::kernel::xam {
+struct XMSGSTARTIOREQUEST_UNKNOWNARG;
+uint32_t xeXMsgStartIORequestEx(uint32_t app, uint32_t message, uint32_t overlapped_ptr,
+                                uint32_t buffer_ptr, uint32_t buffer_length,
+                                XMSGSTARTIOREQUEST_UNKNOWNARG* unknown);
+}  // namespace rex::kernel::xam
+
+REX_HOOK_RAW(__imp__XMsgStartIORequest) {
   constexpr uint32_t kXamAppId = 0xFE;
   constexpr uint32_t kMsgQueryVolumeDeviceType = 0x00020021;
   constexpr uint32_t kInvalidArg = 0x80070057;  // X_E_INVALIDARG
-  if (ctx.r3.u32 == kXamAppId && ctx.r4.u32 == kMsgQueryVolumeDeviceType) {
+  const uint32_t app = ctx.r3.u32;
+  const uint32_t message = ctx.r4.u32;
+  if (app == kXamAppId && message == kMsgQueryVolumeDeviceType) {
     ctx.r3.u64 = kInvalidArg;
     return;
   }
-  __imp__XMsgStartIORequest(ctx, base);
+  ctx.r3.u64 = rex::kernel::xam::xeXMsgStartIORequestEx(
+      app, message, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, nullptr);
 }
 
 // ============================================================================
 // 2. Hook XeKeysConsolePrivateKeySign (Certificado Retail para firmar cache0XX.map)
 // ============================================================================
-REX_HOOK_RAW(XeKeysConsolePrivateKeySign) {
+REX_HOOK_RAW(__imp__XeKeysConsolePrivateKeySign) {
   const uint32_t hash = ctx.r3.u32;
   const uint32_t out = ctx.r4.u32;
   if (!hash || !out) {
@@ -192,7 +205,7 @@ Limbs MulMod(const Limbs& a, const Limbs& b, const Limbs& n) {
 }
 }  // namespace
 
-REX_HOOK_RAW(XeCryptBnQwNeRsaPubCrypt) {
+REX_HOOK_RAW(__imp__XeCryptBnQwNeRsaPubCrypt) {
   const uint8_t* rsa = base + ctx.r5.u32;
   const uint32_t size =
       (uint32_t(rsa[0]) << 24) | (rsa[1] << 16) | (rsa[2] << 8) | rsa[3];
@@ -202,16 +215,17 @@ REX_HOOK_RAW(XeCryptBnQwNeRsaPubCrypt) {
     ctx.r3.u64 = 0;
     return;
   }
-  const Limbs a = LoadBn(base + ctx.r3.u32, size);
   const Limbs n = LoadBn(rsa + 16, size);
-  Limbs result(size * 2, 0);
+  const Limbs a = LoadBn(base + ctx.r3.u32, size);
+  if (Compare(a, n) >= 0) {
+    ctx.r3.u64 = 0;
+    return;
+  }
+  Limbs result(n.size(), 0);
   result[0] = 1;
-  Limbs base_val = a;
-  uint32_t exp = exponent;
-  while (exp > 0) {
-    if (exp & 1) result = MulMod(result, base_val, n);
-    exp >>= 1;
-    if (exp > 0) base_val = MulMod(base_val, base_val, n);
+  for (int bit = 31; bit >= 0; bit--) {
+    result = MulMod(result, result, n);
+    if ((exponent >> bit) & 1) result = MulMod(result, a, n);
   }
   StoreBn(base + ctx.r4.u32, result, size);
   ctx.r3.u64 = 1;

@@ -28,18 +28,35 @@ class HaloReachApp : public rex::ReXApp {
 
   void OnConfigurePaths(rex::PathConfig& paths) override {
 #if defined(REX_PLATFORM_SWITCH) || defined(__SWITCH__)
-    // newlib no considera "sdmc:/..." como ruta absoluta y el SDK le antepone la
-    // carpeta del NRO (sdmc:/switch/HaloReach/sdmc:/...). Usar rutas relativas al NRO.
-    if (paths.game_data_root.empty()) {
-      paths.game_data_root = "game_root";
+    const auto folder = rex::filesystem::GetExecutableFolder();
+    if (!folder.empty()) {
+      if (paths.game_data_root.empty()) {
+        paths.game_data_root = folder / "game_root";
+      }
+      paths.user_data_root = folder / "userdata";
+      paths.cache_root = folder / "userdata/cache";
+      paths.config_path = folder / "haloreach.toml";
     }
-    paths.user_data_root = "userdata";
-    paths.cache_root = "userdata/cache";
 #endif
   }
 
+  void OnPostInitLogging() override {
+    // Forzar plugin GPU xenos para asegurar que la emulación gráfica no inicie vacía
+    if (!rex::cvar::HasNonDefaultValue("gpu_plugin") || rex::cvar::GetFlagByName("gpu_plugin").empty()) {
+      rex::cvar::SetFlagByName("gpu_plugin", "xenos");
+    }
+  }
+
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    rex::cvar::SetFlagByName("gpu_plugin", "xenos");
     rex::cvar::SetFlagByName("mount_cache", "true");
+    rex::cvar::SetFlagByName("allow_game_relative_writes", "true");
+    rex::cvar::SetFlagByName("gpu_allow_invalid_fetch_constants", "true");
+    rex::cvar::SetFlagByName("execute_unclipped_draw_vs_on_cpu", "true");
+    rex::cvar::SetFlagByName("vsync", "false");
+    rex::cvar::SetFlagByName("vulkan_allow_present_mode_immediate", "true");
+    rex::cvar::SetFlagByName("window_width", "1280");
+    rex::cvar::SetFlagByName("window_height", "720");
     // Evitar doble caché de shaders en la microSD con Mesa NVK
     setenv("MESA_SHADER_CACHE_DISABLE", "1", 0);
     setenv("NOUVEAU_HORIZON_BO_CACHE_MB", "192", 0);
