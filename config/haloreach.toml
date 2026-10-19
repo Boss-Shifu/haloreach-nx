@@ -1,0 +1,38 @@
+# Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (60 FPS + OC 1750/765/2600)
+# Ubicación en la microSD: SD:/switch/HaloReach/haloreach.toml
+
+[general]
+title_id = "4D53085B"
+language = "es"
+mount_cache = true
+
+[switch]
+# Overclock objetivo vía sys-clk / pcv: 1750 MHz CPU | 765 MHz GPU | 2600 MHz RAM
+target_cpu_mhz = 1750
+target_gpu_mhz = 765
+target_ram_mhz = 2600
+heap_mb = 2304
+gm_commit_granularity_kb = 256
+nvmap_transfermem_mb = 24
+null_page_guard = true
+
+[graphics]
+gpu_plugin = "xenos"
+# Halo: Reach renderiza nativamente a 1152x720 en X360; con FSR 1 (EASU+RCAS) sube limpio a 1280x720
+window_width = 1280
+window_height = 720
+draw_resolution_scale_x = 1
+draw_resolution_scale_y = 1
+present_effect = "fsr"
+fsr_sharpness = 0.25
+vsync = false
+vulkan_allow_present_mode_immediate = true
+mesa_shader_cache_disable = true
+nouveau_horizon_bo_cache_mb = 192
+
+[engine_blam]
+# Desbloqueo de framerate 30 -> 60 FPS para el motor Blam! (omaha_release 11860)
+target_fps = 60
+vsync_divisor = 1
+spin_sleep_us = 20
+skip_bink_intro_on_crash = false

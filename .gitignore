@@ -1,0 +1,11 @@
+build_*
+project/generated/
+deps/
+mesa_src/
+mesa_prefix/
+out/
+*.nro
+*.elf
+*.nacp
+*.pe
+assets/game_root/*.map

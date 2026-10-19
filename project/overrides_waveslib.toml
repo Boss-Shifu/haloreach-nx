@@ -1,0 +1,8 @@
+# ReXGlue codegen overrides for Halo: Reach (Title ID 4D53085B).
+# Applies to the Waves Audio DSP "waveslib" module bundled with the game.
+# Use this to override codegen for individual waveslib functions, such as
+# skipping stubs that are replaced by native host implementations.
+#
+# Leave the table empty to use the default codegen behaviour.
+
+[functions]

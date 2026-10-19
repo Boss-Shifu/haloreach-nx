@@ -1,0 +1,36 @@
+# Halo: Reach (Xbox 360, Title ID 4D53085B, Build 11860.10.07.24.0147.omaha_relea)
+# ReXGlue v0.10.0 Static Recompilation Manifest for Nintendo Switch (haloreach-nx)
+
+[project]
+name = "haloreach"
+sdk_version = "0.10.0"
+game_root = "../assets/game_root"
+
+[entrypoint]
+file_path = "../assets/game_root/default.xex"
+out_directory_path = "generated/default"
+includes = ["overrides.toml"]
+
+[[modules]]
+guest_path = "waveshell-xbox.dll"
+file_path = "../assets/game_root/WaveShell-Xbox.dll"
+out_directory_path = "generated/waveshell_xbox"
+includes = ["overrides_waveshell.toml"]
+
+[[modules]]
+guest_path = "waveslibdll.dll"
+file_path = "../assets/game_root/WavesLibDLL.dll"
+out_directory_path = "generated/waveslibdll"
+includes = ["overrides_waveslib.toml"]
+
+[[modules]]
+guest_path = "l360.dll"
+file_path = "../assets/game_root/waves/L360.dll"
+out_directory_path = "generated/l360"
+includes = ["overrides_l360.toml"]
+
+[[modules]]
+guest_path = "q10.dll"
+file_path = "../assets/game_root/waves/Q10.dll"
+out_directory_path = "generated/q10"
+includes = ["overrides_q10.toml"]

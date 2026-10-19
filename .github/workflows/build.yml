@@ -1,0 +1,58 @@
+name: Build Halo Reach NX (.nro)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-switch-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Maximize Runner Disk Space (Liberar ~30 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Cache Mesa NVK Driver (libvulkan.a + libnak_rs.a)
+        id: cache-mesa
+        uses: actions/cache@v4
+        with:
+          path: mesa_prefix
+          key: mesa-switch-nvk-v1-d4a00ea0
+
+      - name: Build Mesa NVK Vulkan 1.4 Driver (si no está en caché)
+        if: steps.cache-mesa.outputs.cache-hit != 'true'
+        run: |
+          chmod +x tools/*.sh
+          ./tools/build_mesa.sh
+
+      - name: Run ReXGlue Codegen + Build Switch NRO inside devkitpro/devkita64
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/work" \
+            -w /work \
+            devkitpro/devkita64:latest \
+            bash -lc "
+              apt-get update && apt-get install -y --no-install-recommends \
+                clang llvm lld cmake ninja-build python3 python3-capstone openssl git ca-certificates glslang-tools pkg-config && \
+              chmod +x tools/*.sh && \
+              ./tools/ci_run.sh
+            "
+
+      - name: Upload Halo: Reach Switch NRO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HaloReach-NX-Switch-NRO
+          path: |
+            out/switch/HaloReach/haloreach.nro
+            out/switch/HaloReach/haloreach.toml
+          retention-days: 30

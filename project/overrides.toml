@@ -1,0 +1,8 @@
+# ReXGlue codegen overrides for Halo: Reach (Title ID 4D53085B).
+# This file controls how the recompiler emits guest code for the main
+# executable image. Entries under [functions] map a guest function
+# address/symbol to a codegen directive (e.g. skip, rename, inline).
+#
+# Leave the table empty to use the default codegen behaviour.
+
+[functions]
