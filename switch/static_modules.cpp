@@ -13,19 +13,23 @@ struct StaticRexModuleEntry {
   void (*register_fn)();
 };
 
+namespace rex::runtime {
+class IModuleRegistrar;
+}
+
 #if defined(HALOREACH_LINK_STATIC_MODULES)
 extern "C" {
 const void* waveshell_xbox_ReXModule_GetImageInfo();
-void waveshell_xbox_ReXModule_Register();
+void waveshell_xbox_ReXModule_Register(rex::runtime::IModuleRegistrar*);
 
 const void* waveslibdll_ReXModule_GetImageInfo();
-void waveslibdll_ReXModule_Register();
+void waveslibdll_ReXModule_Register(rex::runtime::IModuleRegistrar*);
 
 const void* l360_ReXModule_GetImageInfo();
-void l360_ReXModule_Register();
+void l360_ReXModule_Register(rex::runtime::IModuleRegistrar*);
 
 const void* q10_ReXModule_GetImageInfo();
-void q10_ReXModule_Register();
+void q10_ReXModule_Register(rex::runtime::IModuleRegistrar*);
 }
 #endif
 
@@ -38,10 +42,10 @@ extern "C" const StaticRexModuleEntry* rex_find_static_module(const char* name) 
   }
 #if defined(HALOREACH_LINK_STATIC_MODULES)
   static const StaticRexModuleEntry kTable[] = {
-      {"waveshell-xbox.dll", reinterpret_cast<const void*>(&waveshell_xbox_ReXModule_GetImageInfo), &waveshell_xbox_ReXModule_Register},
-      {"waveslibdll.dll", reinterpret_cast<const void*>(&waveslibdll_ReXModule_GetImageInfo), &waveslibdll_ReXModule_Register},
-      {"l360.dll", reinterpret_cast<const void*>(&l360_ReXModule_GetImageInfo), &l360_ReXModule_Register},
-      {"q10.dll", reinterpret_cast<const void*>(&q10_ReXModule_GetImageInfo), &q10_ReXModule_Register},
+      {"waveshell-xbox.dll", reinterpret_cast<const void*>(&waveshell_xbox_ReXModule_GetImageInfo), reinterpret_cast<void(*)()>(&waveshell_xbox_ReXModule_Register)},
+      {"waveslibdll.dll", reinterpret_cast<const void*>(&waveslibdll_ReXModule_GetImageInfo), reinterpret_cast<void(*)()>(&waveslibdll_ReXModule_Register)},
+      {"l360.dll", reinterpret_cast<const void*>(&l360_ReXModule_GetImageInfo), reinterpret_cast<void(*)()>(&l360_ReXModule_Register)},
+      {"q10.dll", reinterpret_cast<const void*>(&q10_ReXModule_GetImageInfo), reinterpret_cast<void(*)()>(&q10_ReXModule_Register)},
   };
   for (const auto& entry : kTable) {
     if (strcasecmp(base, entry.guest_name) == 0) {

@@ -55,8 +55,29 @@ class HaloReachApp : public rex::ReXApp {
     rex::cvar::SetFlagByName("execute_unclipped_draw_vs_on_cpu", "true");
     rex::cvar::SetFlagByName("vsync", "false");
     rex::cvar::SetFlagByName("vulkan_allow_present_mode_immediate", "true");
-    rex::cvar::SetFlagByName("window_width", "1280");
-    rex::cvar::SetFlagByName("window_height", "720");
+    rex::cvar::SetFlagByName("present_esperar_adquisicion_en_cpu", "false");
+    rex::cvar::SetFlagByName("render_target_path_vulkan", "fsi");
+    rex::cvar::SetFlagByName("present_effect", "fsr");
+    rex::cvar::SetFlagByName("fsr_sharpness", "0.25");
+    rex::cvar::SetFlagByName("protect_zero", "false");
+    if (!rex::cvar::HasNonDefaultValue("window_width")) {
+      rex::cvar::SetFlagByName("window_width", "1280");
+    }
+    if (!rex::cvar::HasNonDefaultValue("window_height")) {
+      rex::cvar::SetFlagByName("window_height", "720");
+    }
+    if (!rex::cvar::HasNonDefaultValue("video_mode_width")) {
+      rex::cvar::SetFlagByName("video_mode_width", "960");
+    }
+    if (!rex::cvar::HasNonDefaultValue("video_mode_height")) {
+      rex::cvar::SetFlagByName("video_mode_height", "540");
+    }
+    if (!rex::cvar::HasNonDefaultValue("video_mode_width")) {
+      rex::cvar::SetFlagByName("video_mode_width", "960");
+    }
+    if (!rex::cvar::HasNonDefaultValue("video_mode_height")) {
+      rex::cvar::SetFlagByName("video_mode_height", "540");
+    }
     // Evitar doble caché de shaders en la microSD con Mesa NVK
     setenv("MESA_SHADER_CACHE_DISABLE", "1", 0);
     setenv("NOUVEAU_HORIZON_BO_CACHE_MB", "192", 0);
@@ -82,6 +103,8 @@ class HaloReachApp : public rex::ReXApp {
              Mount{"\\CACHE0", "cache0:", "cache0"},
              Mount{"\\CACHE1", "cache1:", "cache1"},
              Mount{"\\CACHE", "cache:", "cache"},
+             Mount{"\\XSTORAGE", "xstorage:", "xstorage"},
+             Mount{"\\MU", "mu:", "mu"},
          }) {
       const auto host = root / m.dir;
       std::error_code ec;

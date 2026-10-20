@@ -14,19 +14,24 @@ target_ram_mhz = 2600
 heap_mb = 2304
 gm_commit_granularity_kb = 256
 nvmap_transfermem_mb = 24
-null_page_guard = true
+null_page_guard = false
+protect_zero = false
 
 [graphics]
 gpu_plugin = "xenos"
 # Halo: Reach renderiza nativamente a 1152x720 en X360; con FSR 1 (EASU+RCAS) sube limpio a 1280x720
 window_width = 1280
 window_height = 720
+video_mode_width = 960
+video_mode_height = 540
 draw_resolution_scale_x = 1
 draw_resolution_scale_y = 1
 present_effect = "fsr"
 fsr_sharpness = 0.25
 vsync = false
 vulkan_allow_present_mode_immediate = true
+present_esperar_adquisicion_en_cpu = false
+render_target_path_vulkan = "fsi"
 mesa_shader_cache_disable = true
 nouveau_horizon_bo_cache_mb = 192
 
