@@ -110,7 +110,7 @@ set(HR_SWITCH_HEAP_MB 2304 CACHE STRING "Capped Switch heap size in MiB")
 set_source_files_properties("${REXSDK_DIR}/src/ui/runtime_switch.cpp" DIRECTORY "${REXSDK_DIR}"
     PROPERTIES COMPILE_DEFINITIONS "REX_SWITCH_HEAP_MB=${HR_SWITCH_HEAP_MB}")
 
-set(HR_SWITCH_HOST_STACK_MB 8 CACHE STRING "Host stack budget per Xbox thread in MiB")
+set(HR_SWITCH_HOST_STACK_MB 2 CACHE STRING "Host stack budget per Xbox thread in MiB")
 set_source_files_properties("${REXSDK_DIR}/src/system/xthread.cpp" DIRECTORY "${REXSDK_DIR}/src/system"
     PROPERTIES COMPILE_DEFINITIONS "REX_SWITCH_HOST_STACK_MB=${HR_SWITCH_HOST_STACK_MB}")
 
