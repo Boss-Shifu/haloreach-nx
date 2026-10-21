@@ -114,6 +114,9 @@ class HaloReachApp : public rex::ReXApp {
       if (!device->Initialize()) continue;
       rt->file_system()->RegisterDevice(std::move(device));
       rt->file_system()->RegisterSymbolicLink(m.link, m.device);
+      rt->file_system()->RegisterSymbolicLink(std::string(m.link) + "\\", m.device);
+      rt->file_system()->RegisterSymbolicLink(std::string("\\??\\") + m.link, m.device);
+      rt->file_system()->RegisterSymbolicLink(std::string("\\??\\") + m.link + "\\", m.device);
     }
   }
 };

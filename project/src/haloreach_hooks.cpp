@@ -239,10 +239,10 @@ extern "C" void autoport_spin_hint() {
 #if defined(__aarch64__)
   __asm__ __volatile__("yield");
 #endif
-  if (++hints % 50000 == 0) {
+  if (++hints == 50000 || hints % 5000000 == 0) {
     REXLOG_WARN("[SPIN_WAIT] Thread spinning! hints={} caller={:p}", hints, __builtin_return_address(0));
   }
-  if (hints % 32 == 0) {
-    std::this_thread::sleep_for(std::chrono::microseconds(20));
+  if ((hints & 0x1F) == 0) {
+    std::this_thread::sleep_for(std::chrono::microseconds(50));
   }
 }
