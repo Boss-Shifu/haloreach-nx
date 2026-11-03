@@ -101,6 +101,9 @@ REXCVAR_DEFINE_BOOL(nx_native_full_clear_load_op, true, "Halo Reach",
 REXCVAR_DEFINE_BOOL(nx_native_msaa, false, "Halo Reach",
                     "Render with the multisampling the game asks for; off draws every target "
                     "with one sample, which costs the GPU much less memory bandwidth");
+REXCVAR_DEFINE_BOOL(nx_resolve_convert, true, "Halo Reach",
+                    "Convert color resolves like the guest: exponent bias, and clamp float "
+                    "render targets copied to fixed-point formats");
 REXCVAR_DEFINE_BOOL(nx_native_async_pipelines, true, "Halo Reach",
                     "Native renderer: compile new pipelines on a worker thread and skip the "
                     "draws that need them until they are ready, instead of stalling the frame");
@@ -620,7 +623,8 @@ struct Renderer::Impl {
   VkPipelineLayout copy_color_layout = VK_NULL_HANDLE;
   VkPipeline copy_color_pipeline = VK_NULL_HANDLE;
   bool ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkImageView dest, int32_t sx,
-                        int32_t sy, int32_t dx, int32_t dy, uint32_t width, uint32_t height);
+                        int32_t sy, int32_t dx, int32_t dy, uint32_t width, uint32_t height,
+                        float scale = 1.0f, bool clamp01 = false);
   bool CreateDepthConversion();
 
   // GPU time by render pass and resolve (nx_native_gpu_profile): on one
@@ -2197,7 +2201,7 @@ bool Renderer::Impl::CreateDepthConversion() {
   device->vulkan_instance()->functions().vkGetPhysicalDeviceFeatures(device->physical_device(),
                                                                      &features);
   if (depth_copy_set_layout && features.shaderStorageImageWriteWithoutFormat) {
-    VkPushConstantRange color_push = {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int32_t) * 6};
+    VkPushConstantRange color_push = {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int32_t) * 8};
     pipeline_layout.pSetLayouts = &depth_copy_set_layout;
     pipeline_layout.pPushConstantRanges = &color_push;
     if (dfn().vkCreatePipelineLayout(vk, &pipeline_layout, nullptr, &copy_color_layout) ==
@@ -2214,7 +2218,8 @@ bool Renderer::Impl::CreateDepthConversion() {
 
 bool Renderer::Impl::ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkImageView dest,
                                       int32_t sx, int32_t sy, int32_t dx, int32_t dy,
-                                      uint32_t width, uint32_t height) {
+                                      uint32_t width, uint32_t height, float scale,
+                                      bool clamp01) {
   if (!copy_color_pipeline || !width || !height) return false;
   VkDescriptorSet set = AllocateSet(depth_copy_set_layout);
   if (!set) return false;
@@ -2243,7 +2248,9 @@ bool Renderer::Impl::ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkI
           VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &before, 0, nullptr, 0, nullptr);
-  int32_t params[6] = {sx, sy, dx, dy, int32_t(width), int32_t(height)};
+  int32_t params[8] = {sx, sy, dx, dy, int32_t(width), int32_t(height), 0,
+                       int32_t(clamp01 ? 1 : 0)};
+  std::memcpy(&params[6], &scale, sizeof(float));
   dfn().vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_COMPUTE, copy_color_pipeline);
   dfn().vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_COMPUTE, copy_color_layout, 0, 1, &set,
                                 0, nullptr);
@@ -4887,26 +4894,23 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
   const RegisterFile& r = *regs;
   const auto initiator = r.Get<reg::VGT_DRAW_INITIATOR>();
   const auto& depth = st.depth_control;
-  if (!source || !source->key.is_depth || st.ps || st.primitive_polygonal ||
+  if (!source || source->key.format != uint32_t(xenos::DepthRenderTargetFormat::kD24S8) ||
+      !HasStencil(source->format) || st.ps || st.primitive_polygonal ||
       !device->properties().depthClamp || !depth.z_enable || !depth.z_write_enable ||
-      depth.zfunc != xenos::CompareFunction::kAlways ||
+      depth.zfunc != xenos::CompareFunction::kAlways || !depth.stencil_enable ||
+      depth.stencilfunc != xenos::CompareFunction::kAlways ||
+      depth.stencilzpass != xenos::StencilOp::kReplace ||
       initiator.prim_type != xenos::PrimitiveType::kRectangleList ||
       initiator.source_select != xenos::SourceSelect::kAutoIndex ||
       initiator.num_indices != 3 || !r.Get<reg::PA_CL_CLIP_CNTL>().clip_disable ||
       !st.vs || (st.vs->writes_point_size_edge_flag_kill_vertex() & 0b100) ||
       !rex::graphics::ShaderInterpreter::CanInterpretShader(*st.vs) ||
-      st.bias_constant != 0.0f || st.bias_slope != 0.0f) return;
+      st.bias_constant != 0.0f || st.bias_slope != 0.0f ||
+      st.vp.minDepth != 0.0f || st.vp.maxDepth != 1.0f) return;
   for (const RenderTarget* target : st.targets.color) if (target) return;
   const auto ref = r.Get<reg::RB_STENCILREFMASK>();
-  if (depth.stencil_enable) {
-    if (!HasStencil(source->format) ||
-        depth.stencilfunc != xenos::CompareFunction::kAlways ||
-        depth.stencilzpass != xenos::StencilOp::kReplace ||
-        ref.stencilwritemask != 0xFF) {
-      return;
-    }
-  }
-  if ((r[rex::graphics::XE_GPU_REG_PA_SC_AA_MASK] & 0xFFFFu) != 0xFFFFu) return;
+  if (ref.stencilwritemask != 0xFF || ref.stencilref != 0 ||
+      (r[rex::graphics::XE_GPU_REG_PA_SC_AA_MASK] & 0xFFFFu) != 0xFFFFu) return;
 
   const StencilClearLayout source_layout{source->key.base_tiles, source->key.pitch,
       source->key.guest_msaa, source->key.format, source->width, source->height};
@@ -4917,9 +4921,9 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
   bool has_alias = false;
   for (const auto& entry : render_targets) {
     const RenderTarget& target = *entry.second;
-    if (target.key.is_depth ||
+    if (target.key.is_depth || target.samples != source->samples ||
         target.key.base_tiles != source->key.base_tiles ||
-        IsColorFormat64bpp(xenos::ColorRenderTargetFormat(target.key.format))) {
+        target.key.format > uint32_t(xenos::ColorRenderTargetFormat::k_8_8_8_8_GAMMA)) {
       continue;
     }
     const StencilClearLayout target_layout = layout_of(target);
@@ -4932,30 +4936,22 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
   }
   if (!has_alias) return;
   StencilClearRect rect{};
-  float constant_depth = 0.0f;
-  if (!GetFastClearRectangle(rect, false, 0, -1.0f, &constant_depth)) return;
-  // Depth-to-color mirror in EDRAM is only valid for zero-depth clears (UI and canvas clears).
-  // Non-zero depth clears (such as far-plane 1.0f in 3D scenes, skybox, space, and cutscenes)
-  // must never overwrite color targets with solid white.
-  if (constant_depth != 0.0f) return;
-
-  const uint32_t depth24 =
-      xenos::DepthRenderTargetFormat(source->key.format) ==
-              xenos::DepthRenderTargetFormat::kD24FS8
-          ? xenos::Float32To20e4(constant_depth, true)
-          : uint32_t(std::clamp(std::round(constant_depth * 16777215.0f), 0.0f, 16777215.0f));
-  const uint32_t stencil8 = depth.stencil_enable ? (ref.stencilref & 0xFFu) : 0u;
-  const uint32_t edram_word = (depth24 << 8) | stencil8;
+  constexpr uint32_t kOpaqueBlackDepth24 = 0x00FF0000;
+  const float opaque_black_depth = xenos::UNorm24To32(kOpaqueBlackDepth24);
+  const bool zero_depth = GetFastClearRectangle(rect, true);
+  const bool opaque_black_depth_clear =
+      !zero_depth && GetFastClearRectangle(rect, false, 0, opaque_black_depth);
+  if (!zero_depth && !opaque_black_depth_clear) return;
 
   bool started = false;
   for (const auto& entry : render_targets) {
     RenderTarget& target = *entry.second;
     StencilClearRect mapped{};
-    if (target.key.is_depth ||
-        IsColorFormat64bpp(xenos::ColorRenderTargetFormat(target.key.format)) ||
-        !MapConstantDepthColorClearRectangle(source_layout, layout_of(target), rect, mapped)) {
-      continue;
-    }
+    if (target.key.is_depth || target.samples != source->samples ||
+        !(zero_depth
+              ? MapZeroDepthColorClearRectangle(source_layout, layout_of(target), rect, mapped)
+              : MapConstantDepthColorClearRectangle(source_layout, layout_of(target), rect,
+                                                    mapped))) continue;
     if (!started) {
       DrainRecorder();
       EndPass();
@@ -4967,8 +4963,8 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
     VkClearAttachment attachment{};
     attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     attachment.colorAttachment = 0;
-    DecodeEdramColorClearValue(xenos::ColorRenderTargetFormat(target.key.format), edram_word,
-                               attachment.clearValue.color);
+    attachment.clearValue.color =
+        {{0.0f, 0.0f, 0.0f, opaque_black_depth_clear ? 1.0f : 0.0f}};
     VkClearRect clear{};
     clear.rect.offset = {mapped.x0, mapped.y0};
     clear.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
@@ -4976,18 +4972,6 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
     dfn().vkCmdClearAttachments(cmd(), 1, &attachment, 1, &clear);
     EndPass();
     target.last_used_frame = frame;
-    if (REXCVAR_GET(nx_native_trace_output) && trace_depth_color_clears.size() < 16) {
-      const std::array<uint32_t, 9> key = {source->key.base_tiles, source->key.pitch,
-          source->key.guest_msaa, target.key.format, uint32_t(mapped.x0), uint32_t(mapped.y0),
-          uint32_t(mapped.x1), uint32_t(mapped.y1), edram_word};
-      if (trace_depth_color_clears.insert(key).second) {
-        REXLOG_INFO("[native][trace] mirrored constant depth/color clear base={} pitch={} "
-                    "guest_samples={} rect=({},{})-({},{}) color_format={} word={:#010x}",
-                    source->key.base_tiles, source->key.pitch, 1u << source->key.guest_msaa,
-                    mapped.x0, mapped.y0, mapped.x1, mapped.y1, target.key.format,
-                    key.back());
-      }
-    }
   }
 }
 
@@ -5502,6 +5486,28 @@ void Renderer::Impl::Resolve() {
                                                 dest_width, dest_height};
       }
     }
+    // Like the guest resolve: the exponent bias scales color, and a float
+    // render target copied to a fixed-point format is clamped to [0, 1]
+    // (FH2's and Halo's HDR luminance chain resolves 7e3 into 2_10_10_10; unclamped
+    // values made its auto exposure blow out into white or darken).
+    bool convert_clamp = false;
+    float convert_scale = 1.0f;
+    if (!is_depth && REXCVAR_GET(nx_resolve_convert)) {
+      const bool float_source = source->format == VK_FORMAT_R16G16B16A16_SFLOAT ||
+                                source->format == VK_FORMAT_R16G16_SFLOAT ||
+                                source->format == VK_FORMAT_R32_SFLOAT ||
+                                source->format == VK_FORMAT_R32G32_SFLOAT;
+      const uint32_t cf = uint32_t(dest_info.copy_dest_format);
+      const bool fixed_dest = cf == uint32_t(xenos::ColorFormat::k_8_8_8_8) ||
+                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10) ||
+                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_A) ||
+                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_AS_16_16_16_16) ||
+                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10_AS_16_16_16_16);
+      convert_clamp = float_source && fixed_dest;
+      const int32_t exp_bias = int32_t(dest_info.copy_dest_exp_bias);
+      if (exp_bias) convert_scale = std::ldexp(1.0f, exp_bias);
+    }
+    const bool convert_needed = convert_clamp || convert_scale != 1.0f;
     if (dest) {
       if (is_depth) {
         // Depth cannot be copied into a color image directly. It goes through
@@ -5803,6 +5809,11 @@ void Renderer::Impl::Resolve() {
                         1u << msaa);
           }
         }
+      } else if (convert_needed && source->samples == VK_SAMPLE_COUNT_1_BIT &&
+                 textures.StorageCapable(dest->format) &&
+                 ComputeColorCopy(c, source->view, dest->view, x0, y0, dest_x, dest_y, width,
+                                  height, convert_scale, convert_clamp)) {
+        // Converted like the guest resolve (exp bias, fixed-point clamp).
       } else if (msaa) {
         if (precise_resolve_barriers) barrier_to_transfer();
         VkImageResolve resolve = {};
@@ -5813,6 +5824,10 @@ void Renderer::Impl::Resolve() {
         resolve.extent = {width, height, 1};
         vkCmdResolveImage(c, source->image, VK_IMAGE_LAYOUT_GENERAL, dest->image,
                                 VK_IMAGE_LAYOUT_GENERAL, 1, &resolve);
+        if (convert_needed && textures.StorageCapable(dest->format)) {
+          ComputeColorCopy(c, dest->view, dest->view, dest_x, dest_y, dest_x, dest_y, width,
+                           height, convert_scale, convert_clamp);
+        }
       } else if (source->samples == VK_SAMPLE_COUNT_1_BIT && textures.StorageCapable(dest->format) &&
                  ComputeColorCopy(c, source->view, dest->view, x0, y0, dest_x, dest_y, width, height)) {
         // Done by compute (see copy_color.cs.glsl).
@@ -6045,30 +6060,6 @@ void Renderer::Impl::Resolve() {
                     ? xenos::Float20e4To32(depth24) * 0.5f
                     : xenos::UNorm24To32(depth24);
             a.clearValue.depthStencil.stencil = clear_reg & 0xFF;
-            VkClearRect cr{};
-            cr.rect.offset = {mapped.x0, mapped.y0};
-            cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
-            cr.layerCount = 1;
-            dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
-            EndPass();
-            alias.last_used_frame = frame;
-          } else if (!color_target && (depth24 == 0) &&
-                     !IsColorFormat64bpp(xenos::ColorRenderTargetFormat(alias.key.format))) {
-            const StencilClearLayout alias_layout{
-                alias.key.base_tiles, alias.key.pitch, alias.last_draw_guest_msaa,
-                alias.key.format, alias.width, alias.height};
-            if (!MapConstantDepthColorClearRectangle(depth_src_layout, alias_layout,
-                                                     resolve_clear_rect, mapped)) {
-              continue;
-            }
-            PassTargets alias_targets;
-            alias_targets.color[0] = &alias;
-            if (!BeginPass(alias_targets)) continue;
-            VkClearAttachment a{};
-            a.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            a.colorAttachment = 0;
-            DecodeEdramColorClearValue(xenos::ColorRenderTargetFormat(alias.key.format), clear_reg,
-                                       a.clearValue.color);
             VkClearRect cr{};
             cr.rect.offset = {mapped.x0, mapped.y0};
             cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};

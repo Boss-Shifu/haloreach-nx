@@ -1,4 +1,4 @@
-# Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (540p/60 FPS + OC)
+# Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (540p/60 FPS)
 # Ubicacion en la microSD: sdmc:/switch/HaloReach/haloreach.toml
 
 [general]
@@ -7,17 +7,18 @@ language = "es"
 mount_cache = true
 log_to_file = true
 log_level = "info"
+log_async = true
+allow_game_relative_writes = true
 
 [Kernel]
 user_language = 5
 user_country = 154
 
 [switch]
-# Overclock objetivo via sys-clk: 1785 MHz CPU | 921 MHz GPU | 1600 MHz RAM
+# Overclock recomendado: 1785 MHz CPU | 921 MHz GPU | 1600 MHz RAM
 target_cpu_mhz = 1785
 target_gpu_mhz = 921
 target_ram_mhz = 1600
-# Presupuesto heap estandar comunidad Switch (1024 MB para evitar OOM de 2977 MB en transicion de campana)
 heap_mb = 1024
 gm_commit_granularity_kb = 256
 nvmap_transfermem_mb = 24
@@ -35,35 +36,31 @@ render_target_path_vulkan = "fbo"
 execute_unclipped_draw_vs_on_cpu = false
 gpu_sin_msaa = true
 native_2x_msaa = false
+nx_native_msaa = false
 gpu_atalho_resolve = true
 async_shader_compilation = true
 readback_memexport = false
 readback_memexport_fast = false
 readback_resolve = "none"
 vblank_adaptativo = true
-asset_pack = false
-asset_pack_build = false
-switch_profile_report = false
-switch_profile_stacks = false
-# Resolucion interna 540p (960x540) escalada a pantalla completa para maximo rendimiento en FPS
+# Resolucion 540p (960x540) para maximo rendimiento en FPS
 window_width = 960
 window_height = 540
+fullscreen = true
 draw_resolution_scale_x = 1
 draw_resolution_scale_y = 1
 present_effect = "bilinear"
 present_letterbox = true
 fsr_sharpness = 0.25
 vsync = true
-vulkan_allow_present_mode_immediate = false
-mesa_shader_cache_disable = false
-nouveau_horizon_bo_cache_mb = 192
+vulkan_allow_present_mode_immediate = true
 
-[Display]
-window_width = 960
-window_height = 540
+# Correccion de exposicion y luminancia HDR (FH2 NX / Halo Reach)
+nx_resolve_convert = true
+nx_native_max_anisotropy = 2
+nx_native_texture_min_mip = 1
 
 [engine_blam]
-# Optimizacion de framerate para el motor Blam! (omaha_release 11860)
 target_fps = 60
 vsync_divisor = 1
 spin_sleep_us = 20

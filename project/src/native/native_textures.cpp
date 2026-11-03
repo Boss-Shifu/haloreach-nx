@@ -2637,7 +2637,7 @@ VkImageView TextureCache::GetViewUncached(const xenos::xe_gpu_texture_fetch_t& f
         REXLOG_INFO("[native] Depth resolve at {:08X} sampled as texture format {}",
                     base_address, uint32_t(format));
       }
-      if (!depth_format) {
+      if (!depth_format && format != xenos::TextureFormat::k_32_FLOAT) {
         im.depth_words_wanted.insert(
             shared ? (resolved->address & ~kDepthWordsTag) : base_address);
         const uint32_t words_address = base_address | kDepthWordsTag;

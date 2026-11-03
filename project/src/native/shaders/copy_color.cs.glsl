@@ -20,11 +20,19 @@ layout(push_constant) uniform Params {
   ivec2 source_origin;
   ivec2 dest_origin;
   uvec2 size;
+  // Resolve format conversion: multiply by 2^exp_bias, and clamp to [0, 1]
+  // when a float render target is copied to a fixed-point guest format.
+  float scale;
+  uint clamp01;
 };
 void main() {
   uvec2 p = gl_GlobalInvocationID.xy;
   if (p.x >= size.x || p.y >= size.y) {
     return;
   }
-  imageStore(dest, dest_origin + ivec2(p), texelFetch(source, source_origin + ivec2(p), 0));
+  vec4 v = texelFetch(source, source_origin + ivec2(p), 0) * scale;
+  if (clamp01 != 0u) {
+    v = clamp(v, vec4(0.0), vec4(1.0));
+  }
+  imageStore(dest, dest_origin + ivec2(p), v);
 }
