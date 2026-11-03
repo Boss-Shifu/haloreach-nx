@@ -2,9 +2,9 @@
 
 #include <cassert>
 
-using fear_nx::native::MapZeroColorAliasClearRectangle;
-using fear_nx::native::StencilClearLayout;
-using fear_nx::native::StencilClearRect;
+using reach_nx::native::MapZeroColorAliasClearRectangle;
+using reach_nx::native::StencilClearLayout;
+using reach_nx::native::StencilClearRect;
 
 namespace {
 

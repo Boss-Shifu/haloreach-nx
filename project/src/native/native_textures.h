@@ -39,7 +39,7 @@ namespace rex::memory {
 class Memory;
 }
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Where the texture cache puts upload data and records the copies.
 struct UploadTarget {
@@ -259,4 +259,4 @@ class TextureCache {
   TextureCacheStats stats_;
 };
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

@@ -11,7 +11,7 @@
 
 namespace {
 
-using fear_nx::native::CanUseAttachmentLoadClear;
+using reach_nx::native::CanUseAttachmentLoadClear;
 
 static_assert(CanUseAttachmentLoadClear(0, 0, 8, 6, 8, 6));
 static_assert(CanUseAttachmentLoadClear(0, 0, 9, 7, 8, 6));

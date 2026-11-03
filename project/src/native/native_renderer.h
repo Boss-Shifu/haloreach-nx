@@ -41,7 +41,7 @@ namespace rex::ui::vulkan {
 class VulkanProvider;
 }
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 struct RendererStats {
   uint64_t draws = 0;
@@ -224,4 +224,4 @@ class Renderer {
   uint64_t bool_loop_generation_ = 1;
 };
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

@@ -2,7 +2,7 @@
 
 #include "native_stencil_clear.h"
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // The renderer normalizes the linear and gamma variants to this shared
 // storage format. This mirror is deliberately limited to packed RGBA8, where
@@ -74,4 +74,4 @@ constexpr bool MapZeroColorAliasClearRectangle(const StencilClearLayout& source,
   return true;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

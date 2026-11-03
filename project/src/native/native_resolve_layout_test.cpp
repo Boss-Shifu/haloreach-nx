@@ -7,11 +7,11 @@
 
 #include "native_resolve_layout.h"
 
-using fear_nx::native::resolve_layout::CompositeState;
-using fear_nx::native::resolve_layout::FindSegmentOrigin;
-using fear_nx::native::resolve_layout::FindTileOrigin;
-using fear_nx::native::resolve_layout::MakeCopyRegion;
-using fear_nx::native::resolve_layout::TileAddressOffset;
+using reach_nx::native::resolve_layout::CompositeState;
+using reach_nx::native::resolve_layout::FindSegmentOrigin;
+using reach_nx::native::resolve_layout::FindTileOrigin;
+using reach_nx::native::resolve_layout::MakeCopyRegion;
+using reach_nx::native::resolve_layout::TileAddressOffset;
 
 int main() {
   constexpr uint32_t kPitch = 1280;
@@ -104,7 +104,7 @@ int main() {
   std::vector<uint8_t> left(768 * kHeight, 1);
   std::vector<uint8_t> right(640 * kHeight, 2);
   auto copy = [&](const std::vector<uint8_t>& source, uint32_t source_width,
-                  const fear_nx::native::resolve_layout::CopyRegion& region) {
+                  const reach_nx::native::resolve_layout::CopyRegion& region) {
     for (uint32_t y = 0; y < region.height; ++y) {
       for (uint32_t x = 0; x < region.width; ++x) {
         output[(region.destination_y + y) * kPitch + region.destination_x + x] =

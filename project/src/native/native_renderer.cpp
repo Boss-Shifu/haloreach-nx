@@ -74,37 +74,37 @@ extern "C" {
 #include "native_textures.h"
 
 REXCVAR_DECLARE(bool, gpu_specialize_texture_signs);
-REXCVAR_DEFINE_BOOL(nx_native_depth24, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_depth24, false, "Halo Reach",
                     "Store depth in 32 bits per pixel (24-bit depth with stencil, or float "
                     "without) instead of 32-bit float with stencil, which NVIDIA GPUs keep "
                     "in 64");
-REXCVAR_DEFINE_BOOL(nx_native_gpu_profile, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_gpu_profile, false, "Halo Reach",
                     "Log GPU time by render pass and resolve, measured on one frame in 16");
-REXCVAR_DEFINE_BOOL(nx_native_record_thread, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_record_thread, false, "Halo Reach",
                     "Make the Vulkan calls of draws on a second thread, so the command ring "
                     "thread prepares the next draw meanwhile");
-REXCVAR_DEFINE_BOOL(nx_native_fused_gamma, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_fused_gamma, true, "Halo Reach",
                     "Apply gamma during final bilinear presentation of 8-bit frontbuffers")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_zcull, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_zcull, true, "Halo Reach",
                     "Allow persistent NVK ZCULL on depth attachments; preserve contents on growth")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_shared_resolves, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_shared_resolves, true, "Halo Reach",
                     "Write validated tiled resolves directly into one shared destination resource")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_precise_resolve_barriers, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_precise_resolve_barriers, true, "Halo Reach",
                     "Avoid the broad pre-transfer barrier when a resolve uses compute")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_full_clear_load_op, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_full_clear_load_op, true, "Halo Reach",
                     "Clear fully covered render areas at attachment load without loading old contents")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_msaa, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_msaa, false, "Halo Reach",
                     "Render with the multisampling the game asks for; off draws every target "
                     "with one sample, which costs the GPU much less memory bandwidth");
-REXCVAR_DEFINE_BOOL(nx_native_async_pipelines, true, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_async_pipelines, true, "Halo Reach",
                     "Native renderer: compile new pipelines on a worker thread and skip the "
                     "draws that need them until they are ready, instead of stalling the frame");
-REXCVAR_DEFINE_BOOL(nx_native_trace_output, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_native_trace_output, false, "Halo Reach",
                     "Log bounded unique native renderer swap, viewport, and Xenos resolve state for display diagnostics");
 
 // Freshness + safe-span checks adapted from Juansolo457/fear360-recomp,
@@ -117,7 +117,7 @@ REXCVAR_DEFINE_BOOL(haloreach_vertex_spans, true, "Halo Reach",
                     "Check only reachable vertex spans when the shader proves them safe")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 namespace shaders {
 #include "shaders/vulkan_spirv/apply_gamma_table_cs.h"
 #include "shaders/depth_resolve_cs.h"
@@ -4934,6 +4934,10 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
   StencilClearRect rect{};
   float constant_depth = 0.0f;
   if (!GetFastClearRectangle(rect, false, 0, -1.0f, &constant_depth)) return;
+  // Depth-to-color mirror in EDRAM is only valid for zero-depth clears (UI and canvas clears).
+  // Non-zero depth clears (such as far-plane 1.0f in 3D scenes, skybox, space, and cutscenes)
+  // must never overwrite color targets with solid white.
+  if (constant_depth != 0.0f) return;
 
   const uint32_t depth24 =
       xenos::DepthRenderTargetFormat(source->key.format) ==
@@ -6048,7 +6052,7 @@ void Renderer::Impl::Resolve() {
             dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
             EndPass();
             alias.last_used_frame = frame;
-          } else if (!color_target &&
+          } else if (!color_target && (depth24 == 0) &&
                      !IsColorFormat64bpp(xenos::ColorRenderTargetFormat(alias.key.format))) {
             const StencilClearLayout alias_layout{
                 alias.key.base_tiles, alias.key.pitch, alias.last_draw_guest_msaa,
@@ -6605,4 +6609,4 @@ void Renderer::SetGammaRamp256(const uint32_t* entries) {
   std::memcpy(impl_->gamma_ramp, entries, sizeof(impl_->gamma_ramp));
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

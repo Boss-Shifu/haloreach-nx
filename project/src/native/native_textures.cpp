@@ -45,7 +45,7 @@ extern "C" {
 
 REXCVAR_DECLARE(bool, nx_native_precise_resolve_barriers);
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 namespace xenos = rex::graphics::xenos;
 namespace texture_util = rex::graphics::texture_util;
@@ -503,10 +503,10 @@ struct StreamJob {
   bool ok = false;
 };
 
-REXCVAR_DEFINE_UINT32(nx_native_max_anisotropy, 2, "Halo Reach NX",
+REXCVAR_DEFINE_UINT32(nx_native_max_anisotropy, 2, "Halo Reach",
                       "Most anisotropic filtering any texture gets (1 turns it off); the "
                       "game asks for it on floors, where it costs the GPU the most");
-REXCVAR_DEFINE_UINT32(nx_native_texture_min_mip, 1, "Halo Reach NX",
+REXCVAR_DEFINE_UINT32(nx_native_texture_min_mip, 1, "Halo Reach",
                       "Minimum mip level for large tiled BC1-BC5 2D textures (0 keeps the "
                       "game setting, maximum 2; restart required)");
 
@@ -3425,4 +3425,4 @@ VkSampler TextureCache::GetSampler(const xenos::xe_gpu_texture_fetch_t& fetch,
   return sampler;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

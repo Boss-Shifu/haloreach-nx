@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Attachment load clears apply to the active render area, while
 // vkCmdClearAttachments applies only to the intersection with its clear rect.
@@ -18,4 +18,4 @@ constexpr bool CanUseAttachmentLoadClear(int32_t x, int32_t y,
          width >= render_width && height >= render_height;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

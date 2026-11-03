@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace fear_nx::native::resolve_layout {
+namespace reach_nx::native::resolve_layout {
 
 struct Point {
   uint32_t x = 0;
@@ -165,4 +165,4 @@ inline std::optional<SharedWrite> PlanSharedWrite(
   return SharedWrite{root, pitch, height, origin, *region};
 }
 
-}  // namespace fear_nx::native::resolve_layout
+}  // namespace reach_nx::native::resolve_layout

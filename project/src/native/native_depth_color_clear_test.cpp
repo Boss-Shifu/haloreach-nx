@@ -2,21 +2,21 @@
 
 #include <cassert>
 
-using fear_nx::native::MapZeroDepthColorClearRectangle;
-using fear_nx::native::MapConstantDepthColorClearRectangle;
-using fear_nx::native::StencilClearLayout;
-using fear_nx::native::StencilClearRect;
+using reach_nx::native::MapZeroDepthColorClearRectangle;
+using reach_nx::native::MapConstantDepthColorClearRectangle;
+using reach_nx::native::StencilClearLayout;
+using reach_nx::native::StencilClearRect;
 
 namespace {
 
 constexpr StencilClearLayout kDepth320x2048Msaa4{
-    0, 320, 2, fear_nx::native::kDepthClearFormatD24S8, 320, 2048};
+    0, 320, 2, reach_nx::native::kDepthClearFormatD24S8, 320, 2048};
 constexpr StencilClearLayout kColor320x2048Msaa4{
-    0, 320, 2, fear_nx::native::kColorClearFormatR8G8B8A8, 320, 2048};
+    0, 320, 2, reach_nx::native::kColorClearFormatR8G8B8A8, 320, 2048};
 constexpr StencilClearLayout kDepth160x2048Msaa4{
-    0, 160, 2, fear_nx::native::kDepthClearFormatD24S8, 160, 2048};
+    0, 160, 2, reach_nx::native::kDepthClearFormatD24S8, 160, 2048};
 constexpr StencilClearLayout kColor320x256Msaa1{
-    0, 320, 0, fear_nx::native::kColorClearFormatR8G8B8A8, 320, 256};
+    0, 320, 0, reach_nx::native::kColorClearFormatR8G8B8A8, 320, 256};
 
 void ExpectRect(const StencilClearRect& actual, int32_t x0, int32_t y0, int32_t x1,
                 int32_t y1) {
@@ -47,7 +47,7 @@ int main() {
   // Captured D24 0xFF0000 becomes the RGBA8 word 0xFF000000. A matching
   // un-divided Z with W!=1 must not be mistaken for the same clear depth.
   constexpr float kOpaqueBlackDepth = float(0x00FF0001) / float(1 << 24);
-  using fear_nx::native::IsConstantDepthClearVertex;
+  using reach_nx::native::IsConstantDepthClearVertex;
   assert(IsConstantDepthClearVertex(kOpaqueBlackDepth, 1.0f, false, kOpaqueBlackDepth));
   assert(!IsConstantDepthClearVertex(kOpaqueBlackDepth, 2.0f, false, kOpaqueBlackDepth));
   assert(IsConstantDepthClearVertex(kOpaqueBlackDepth, 2.0f, true, kOpaqueBlackDepth));
@@ -61,7 +61,7 @@ int main() {
   ExpectRect(mapped, 0, 0, 240, 256);
 
   auto gamma_1x_color = kColor320x256Msaa1;
-  gamma_1x_color.format = fear_nx::native::kColorClearFormatR8G8B8A8Gamma;
+  gamma_1x_color.format = reach_nx::native::kColorClearFormatR8G8B8A8Gamma;
   assert(MapConstantDepthColorClearRectangle(kDepth160x2048Msaa4, gamma_1x_color,
                                              {0, 0, 120, 128}, mapped));
   ExpectRect(mapped, 0, 0, 240, 256);
@@ -85,7 +85,7 @@ int main() {
 
   // The gamma RGBA8 alias uses the same 32-bit storage layout.
   auto gamma_color = kColor320x2048Msaa4;
-  gamma_color.format = fear_nx::native::kColorClearFormatR8G8B8A8Gamma;
+  gamma_color.format = reach_nx::native::kColorClearFormatR8G8B8A8Gamma;
   assert(MapZeroDepthColorClearRectangle(kDepth320x2048Msaa4, gamma_color,
                                          {40, 8, 280, 240}, mapped));
   ExpectRect(mapped, 40, 8, 280, 240);

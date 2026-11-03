@@ -8,7 +8,7 @@
 
 #include "native_resolve_layout.h"
 
-namespace resolve_layout = fear_nx::native::resolve_layout;
+namespace resolve_layout = reach_nx::native::resolve_layout;
 
 namespace {
 

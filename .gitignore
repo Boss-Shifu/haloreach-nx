@@ -1,11 +1,31 @@
+# Carpetas de compilacion y artefactos temporales
 build_*
-project/generated/
-deps/
+out/
 mesa_src/
 mesa_prefix/
-out/
 *.nro
 *.elf
 *.nacp
 *.pe
-assets/game_root/*.map
+
+# Codigo generado de la recompilacion estatica (se genera localmente con ReXGlue)
+project/generated/
+
+# Dependencias SDK externas
+deps/
+
+# Archivos de juego y binarios con derechos de autor (BYOG - Bring Your Own Game)
+# NUNCA subir binarios ni assets del juego original
+assets/game_root/
+*.xex
+*.dll
+*.iso
+*.map
+*.bin
+*.dat
+*.bik
+*.bik2
+*.wmv
+*.rar
+*.zip
+*.7z

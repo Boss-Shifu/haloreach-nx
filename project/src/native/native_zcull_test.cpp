@@ -85,7 +85,7 @@ bool ClearActuallyCoversImage(uint32_t image_width, uint32_t image_height,
 
 void CheckClearReplacement(uint32_t width, uint32_t height,
                            uint32_t sample_count, const TestCase& test) {
-  const bool actual = fear_nx::native::CanDiscardDepthForClear(
+  const bool actual = reach_nx::native::CanDiscardDepthForClear(
       width, height, test.x, test.y, test.width, test.height,
       test.pass_width, test.pass_height);
   assert(actual == test.can_discard);
@@ -162,18 +162,18 @@ void TestPaddedImageRows() {
 }
 
 void TestZeroAndMaximumBounds() {
-  assert(!fear_nx::native::CanDiscardDepthForClear(0, 1, 0, 0, 1, 1, 1, 1));
-  assert(!fear_nx::native::CanDiscardDepthForClear(1, 0, 0, 0, 1, 1, 1, 1));
+  assert(!reach_nx::native::CanDiscardDepthForClear(0, 1, 0, 0, 1, 1, 1, 1));
+  assert(!reach_nx::native::CanDiscardDepthForClear(1, 0, 0, 0, 1, 1, 1, 1));
 
   constexpr uint32_t kMax = std::numeric_limits<uint32_t>::max();
-  assert(fear_nx::native::CanDiscardDepthForClear(kMax, kMax, 0, 0, kMax, kMax,
+  assert(reach_nx::native::CanDiscardDepthForClear(kMax, kMax, 0, 0, kMax, kMax,
                                                   kMax, kMax));
-  assert(fear_nx::native::CanDiscardDepthForClear(5, 3, 0, 0, kMax, kMax, 5, 3));
+  assert(reach_nx::native::CanDiscardDepthForClear(5, 3, 0, 0, kMax, kMax, 5, 3));
   // A 32-bit x+width calculation would wrap here and could incorrectly accept
   // a rectangle whose nonzero origin leaves the first column untouched.
-  assert(!fear_nx::native::CanDiscardDepthForClear(kMax, 3, 1, 0, kMax, 3,
+  assert(!reach_nx::native::CanDiscardDepthForClear(kMax, 3, 1, 0, kMax, 3,
                                                    kMax, 3));
-  assert(!fear_nx::native::CanDiscardDepthForClear(5, 3, 0, 0, kMax, kMax,
+  assert(!reach_nx::native::CanDiscardDepthForClear(5, 3, 0, 0, kMax, kMax,
                                                    4, 3));
 }
 

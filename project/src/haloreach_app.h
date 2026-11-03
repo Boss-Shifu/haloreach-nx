@@ -50,8 +50,8 @@ class HaloReachApp : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
- if (fear_nx::native::Enabled()) {
- config.graphics = fear_nx::native::CreateGraphicsSystem();
+ if (reach_nx::native::Enabled()) {
+ config.graphics = reach_nx::native::CreateGraphicsSystem();
  }
     rex::cvar::SetFlagByName("gpu_plugin", "xenos");
     rex::cvar::SetFlagByName("mount_cache", "true");

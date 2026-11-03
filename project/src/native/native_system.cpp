@@ -2,7 +2,7 @@
 // Adapted from Project8Recomp's generic Xenos Vulkan renderer (GPL-3.0),
 // itself based on nfsmw-nx. Title-specific hooks and shader replacements are excluded.
 //
-// Native Xenos graphics system for F.E.A.R. NX. It consumes the Xbox 360 GPU
+// Native Xenos graphics system for Halo Reach NX. It consumes the Xbox 360 GPU
 // command ring, updates register and memory state, and presents through Vulkan.
 #include "native_system.h"
 #include "native_renderer.h"
@@ -48,20 +48,20 @@ REXCVAR_DECLARE(int32_t, query_occlusion_fake_sample_count);
 // which feels choppy even at a good average. Holding the interrupt to vblank
 // boundaries, at least this many vblanks after the previous one, gives the
 // even cadence a console gets from vsync; 2 is a steady 30.
-REXCVAR_DEFINE_BOOL(nx_pace_before_present, false, "Halo Reach NX",
+REXCVAR_DEFINE_BOOL(nx_pace_before_present, false, "Halo Reach",
                     "Hold a frame for the frame rate cap before presenting it rather than "
                     "after, so frames go on screen evenly spaced");
-REXCVAR_DEFINE_UINT32(nx_min_frame_vblanks, 1, "Halo Reach NX",
+REXCVAR_DEFINE_UINT32(nx_min_frame_vblanks, 1, "Halo Reach",
                       "Native renderer: minimum 60 Hz vblanks between frames (1 = the game's "
                       "own pacing, 2 = an even 30 fps)");
 
 #if defined(__SWITCH__)
 // Adapted from Project8Recomp (GPL-3.0), src/game/src/native/; generic Xenos GPU code.
-#define FEAR_NX_RENDERER_DEFAULT "native"
+#define REACH_NX_RENDERER_DEFAULT "native"
 #else
-#define FEAR_NX_RENDERER_DEFAULT "xenos"
+#define REACH_NX_RENDERER_DEFAULT "xenos"
 #endif
-REXCVAR_DEFINE_STRING(nx_renderer, FEAR_NX_RENDERER_DEFAULT, "Halo Reach NX",
+REXCVAR_DEFINE_STRING(nx_renderer, REACH_NX_RENDERER_DEFAULT, "Halo Reach",
                       "xenos = ReXGlue's emulated Xbox 360 GPU; native = the app-owned "
                       "Vulkan Xenos renderer")
     .allowed({"xenos", "native"})
@@ -77,7 +77,7 @@ extern "C" void RexGmSetReadOnlyMapped(bool enabled);
 extern "C" void RexSwitchPerfCount(unsigned id);
 #endif
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 namespace {
 
 namespace xenos = rex::graphics::xenos;
@@ -1458,4 +1458,4 @@ std::unique_ptr<rex::system::IGraphicsSystem> CreateGraphicsSystem() {
   return std::make_unique<NativeGraphicsSystem>();
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

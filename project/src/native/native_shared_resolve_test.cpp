@@ -7,11 +7,11 @@
 
 #include "native_resolve_layout.h"
 
-using fear_nx::native::resolve_layout::CopyRegion;
-using fear_nx::native::resolve_layout::PlanSharedWrite;
-using fear_nx::native::resolve_layout::Point;
-using fear_nx::native::resolve_layout::SharedWrite;
-using fear_nx::native::resolve_layout::TileAddressOffset;
+using reach_nx::native::resolve_layout::CopyRegion;
+using reach_nx::native::resolve_layout::PlanSharedWrite;
+using reach_nx::native::resolve_layout::Point;
+using reach_nx::native::resolve_layout::SharedWrite;
+using reach_nx::native::resolve_layout::TileAddressOffset;
 
 namespace {
 

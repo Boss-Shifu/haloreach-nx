@@ -12,7 +12,7 @@
 
 #include <rex/ui/vulkan/device.h>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 enum class PipelineGeometryShader : uint32_t {
   kNone,
@@ -42,4 +42,4 @@ union GeometryShaderKey {
 VkShaderModule CreateGeometryShader(const rex::ui::vulkan::VulkanDevice* vulkan_device,
                                     GeometryShaderKey key);
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

@@ -2,7 +2,7 @@
 
 #include "native_stencil_clear.h"
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Format enum values are interpreted according to the render-target kind.
 // These are the only cross-kind formats for which the current depth-zero
@@ -132,4 +132,4 @@ constexpr bool MapZeroDepthColorClearRectangle(const StencilClearLayout& source_
                                              destination_rect);
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

@@ -4,7 +4,18 @@ Port nativo para **Nintendo Switch** de **Halo: Reach** (Xbox 360, Title ID `4D5
 
 ---
 
-## 🎮 Visión General
+## ⚖️ Aviso Legal y Política de Copyright (BYOG - Bring Your Own Game)
+
+> [!IMPORTANT]
+> **Este repositorio NO CONTIENE ni distribuye ningún archivo con derechos de autor, binario compilado (`default.xex`, archivos `.dll`), mapa (`.map`), textura, audio, vídeo ni asset propietario de Microsoft Corporation o Bungie.**
+>
+> Este proyecto es únicamente una **capa de compatibilidad de código abierto (wrapper/runtime)**, un conjunto de herramientas de instrumentación y un **renderizador nativo Vulkan 1.3**.
+>
+> Para compilar y ejecutar este port, **debes poseer una copia legal del juego original para Xbox 360** y realizar la extracción y recompilación estática en tu propia máquina siguiendo las instrucciones detalladas en este documento. Ningún archivo con derechos de autor será jamás alojado en este repositorio.
+
+---
+
+## 🎮 Visión General y Arquitectura
 
 A diferencia de la emulación tradicional que interpreta o recompila código en tiempo de ejecución (JIT) consumiendo enormes recursos de CPU, este proyecto traduce estáticamente el código máquina PowerPC Xenon (3 núcleos / 6 hilos) de Xbox 360 a código nativo **C++ / ARM64 (AArch64)**.
 
@@ -56,6 +67,40 @@ A lo largo del desarrollo de este port se implementaron soluciones críticas par
 
 ---
 
+## 📋 Guía de Recompilación: Cómo Construir el Port desde Cero
+
+Para construir este proyecto necesitas generar el código C++ a partir de tu propio juego original mediante el recompilador estático **ReXGlue SDK**:
+
+### Paso 1: Obtención de Binarios Legales
+De tu copia legal de *Halo: Reach* (Xbox 360), extrae los siguientes archivos y colócalos en `assets/game_root/`:
+* `assets/game_root/default.xex` (Ejecutable principal del juego, versión *omaha_release 11860*).
+* `assets/game_root/WaveShell-Xbox.dll`
+* `assets/game_root/WavesLibDLL.dll`
+* `assets/game_root/waves/L360.dll`
+* `assets/game_root/waves/Q10.dll`
+
+*(Consulta [assets/INSTRUCCIONES_ASSETS.md](assets/INSTRUCCIONES_ASSETS.md) para más detalles).*
+
+### Paso 2: Recompilación Estática (Generación de Código C++)
+Ejecuta la herramienta de recompilación AOT para generar los fuentes C++ a partir del `default.xex`:
+```bash
+bash tools/codegen.sh
+```
+Esto creará la carpeta `project/generated/default/` con los archivos `haloreach_recomp.*.cpp` listos para ser compilados por el compilador cruzado de Nintendo Switch.
+
+### Paso 3: Compilación para Nintendo Switch (`.nro`)
+Con **devkitA64** y **CMake** instalados:
+```bash
+# 1. Configurar el proyecto con CMake y Ninja
+cmake -B build_switch -S switch -G Ninja -DCMAKE_TOOLCHAIN_FILE=C:/devkitPro/cmake/Switch.cmake -DCMAKE_BUILD_TYPE=Release
+
+# 2. Compilar el binario NRO
+cmake --build build_switch -j 8
+```
+El archivo final `haloreach.nro` se generará en `build_switch/haloreach.nro`.
+
+---
+
 ## 🔍 Problemas Conocidos y Tareas para la Comunidad (To-Do List)
 
 Invitamos a programadores de la comunidad, especialistas en ingeniería inversa, Vulkan y Horizon OS a colaborar en los siguientes puntos clave:
@@ -76,56 +121,7 @@ Invitamos a programadores de la comunidad, especialistas en ingeniería inversa,
 * **Objetivo:** Mapear los flujos de *memexport* a Storage Buffers (SSBO) de Vulkan o canalizar los cálculos de transformación de vértices a un paso de cómputo previo.
 
 ### 4. Estabilización de Framerate a 30 / 60 FPS
-* **Objetivo:** Optimizar las barreras de sincronización (`VkPipelineBarrier`) en la presentación de fotogramas, reduciendo la sobrecarga de CPU en el Command Processor para alcanzar 30 FPS sólidos en gameplay y 60 FPS en escenarios lineales.
-
----
-
-## 📦 Estructura del Proyecto
-
-```
-haloreach-nx/
-├── config/
-│   └── haloreach.toml           # Configuración de runtime (resolución, CVARs, audio, Vulkan)
-├── deps/
-│   └── rexglue-sdk/             # SDK de ReXGlue con subsistemas de kernel, XAM y threading
-├── project/
-│   ├── generated/               # Código C++ generado por el recompilador estático
-│   └── src/
-│       ├── haloreach_app.h      # Ciclo de vida de la aplicación, configuración VFS y arranque
-│       ├── haloreach_hooks.cpp  # Hooks específicos de Halo Reach (D3D, audio, spin-wait)
-│       └── native/              # Renderizador nativo Xenos a Vulkan (Mesa NVK)
-│           ├── native_renderer.cpp
-│           ├── native_textures.cpp
-│           ├── native_system.cpp
-│           └── shaders/         # Shaders de cómputo en GLSL y cabeceras SPIR-V
-└── switch/
-    └── CMakeLists.txt           # Configuración de compilación para devkitA64 / Nintendo Switch
-```
-
----
-
-## 🔧 Requisitos y Compilación
-
-### Requisitos previos
-* **devkitPro** con toolchain `devkitA64` y bibliotecas `libnx`.
-* **CMake 3.24+** y **Ninja**.
-* Entorno de compilación cruzada para `aarch64-none-elf`.
-
-### Instrucciones de compilación
-1. Clonar el repositorio:
-   ```bash
-   git clone https://github.com/Boss-Shifu/haloreach-nx.git
-   cd haloreach-nx
-   ```
-2. Generar el entorno de compilación:
-   ```bash
-   cmake -B build_switch -S switch -G Ninja -DCMAKE_TOOLCHAIN_FILE=C:/devkitPro/cmake/Switch.cmake -DCMAKE_BUILD_TYPE=Release
-   ```
-3. Compilar el ejecutable para Switch (`.nro`):
-   ```bash
-   cmake --build build_switch -j 8
-   ```
-   El binario resultante se encontrará en `build_switch/haloreach.nro`.
+* **Objetivo:** Optimizar las barreras de sincronización (`VkPipelineBarrier`) en la presentación de fotogramas, reduciendo la sobrecarga de CPU en el Command Processor para alcanzar 30 FPS sólidos en gameplay y 60 FPS en menús.
 
 ---
 
@@ -136,7 +132,7 @@ haloreach-nx/
    sdmc:/switch/HaloReach/
    ├── haloreach.nro
    ├── haloreach.toml
-   ├── default.xex (o assets del juego original extraídos)
+   ├── default.xex (tu copia legal)
    └── userdata/
    ```
 2. **IMPORTANTE (Title Takeover Obligatorio):**

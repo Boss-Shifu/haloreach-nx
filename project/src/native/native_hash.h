@@ -28,7 +28,7 @@
 
 #include "xxhash.h"
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 class ChangeDetector {
  public:
@@ -189,4 +189,4 @@ class FlatMap64 {
   uint32_t shift_ = 64;
 };
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

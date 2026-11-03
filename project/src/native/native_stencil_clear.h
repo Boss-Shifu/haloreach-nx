@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Guest MSAA register encodings used by the native renderer:
 //   0 = 1x, 1 = 2x, 2 = 4x.
@@ -108,4 +108,4 @@ constexpr bool MapStencilClearRectangle(const StencilClearLayout& source,
   return true;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

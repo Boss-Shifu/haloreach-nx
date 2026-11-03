@@ -1,4 +1,4 @@
-# Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (60 FPS + OC 1750/765/2600)
+# Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (540p/60 FPS + OC)
 # Ubicacion en la microSD: sdmc:/switch/HaloReach/haloreach.toml
 
 [general]
@@ -8,13 +8,17 @@ mount_cache = true
 log_to_file = true
 log_level = "info"
 
+[Kernel]
+user_language = 5
+user_country = 154
+
 [switch]
-# Overclock objetivo via sys-clk / pcv: 1785 MHz CPU | 921 MHz GPU | 1600 MHz RAM
+# Overclock objetivo via sys-clk: 1785 MHz CPU | 921 MHz GPU | 1600 MHz RAM
 target_cpu_mhz = 1785
 target_gpu_mhz = 921
 target_ram_mhz = 1600
-# Presupuesto heap ampliado Title Takeover: 1600 MB (garantiza memoria suficiente para texturas, mapas y heaps)
-heap_mb = 1600
+# Presupuesto heap estandar comunidad Switch (1024 MB para evitar OOM de 2977 MB en transicion de campana)
+heap_mb = 1024
 gm_commit_granularity_kb = 256
 nvmap_transfermem_mb = 24
 null_page_guard = true
@@ -41,24 +45,26 @@ asset_pack = false
 asset_pack_build = false
 switch_profile_report = false
 switch_profile_stacks = false
-# Halo: Reach renderiza nativamente a 1152x720 en X360; con FSR 1 (EASU+RCAS) sube limpio a 1280x720
-window_width = 1280
-window_height = 720
+# Resolucion interna 540p (960x540) escalada a pantalla completa para maximo rendimiento en FPS
+window_width = 960
+window_height = 540
 draw_resolution_scale_x = 1
 draw_resolution_scale_y = 1
-present_effect = "none"
+present_effect = "bilinear"
+present_letterbox = true
 fsr_sharpness = 0.25
 vsync = true
 vulkan_allow_present_mode_immediate = false
 mesa_shader_cache_disable = false
 nouveau_horizon_bo_cache_mb = 192
 
+[Display]
+window_width = 960
+window_height = 540
+
 [engine_blam]
-# Desbloqueo de framerate 30 -> 60 FPS para el motor Blam! (omaha_release 11860)
+# Optimizacion de framerate para el motor Blam! (omaha_release 11860)
 target_fps = 60
 vsync_divisor = 1
 spin_sleep_us = 20
 skip_bink_intro_on_crash = false
-
-user_language = 5
-user_country = 154

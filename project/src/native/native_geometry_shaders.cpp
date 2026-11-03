@@ -26,7 +26,7 @@
 #include <rex/graphics/xenos.h>
 #include <rex/ui/vulkan/util.h>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 using namespace rex;
 using namespace rex::graphics;
@@ -1122,4 +1122,4 @@ VkShaderModule CreateGeometryShader(const rex::ui::vulkan::VulkanDevice* vulkan_
   return shader_module;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

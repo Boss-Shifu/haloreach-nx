@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Conservatively permits dropping the old depth image only when this clear,
 // after clipping to the active pass, covers every pixel in the allocated
@@ -27,4 +27,4 @@ constexpr bool CanDiscardDepthForClear(uint32_t depth_width, uint32_t depth_heig
          pass_width >= depth_width && pass_height >= depth_height;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

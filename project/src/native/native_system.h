@@ -2,7 +2,7 @@
 // Adapted from Project8Recomp's generic Xenos Vulkan renderer (GPL-3.0),
 // itself based on nfsmw-nx.
 //
-// Public entry points for F.E.A.R. NX's app-owned Xenos graphics system.
+// Public entry points for Halo Reach NX's app-owned Xenos graphics system.
 #pragma once
 
 #include <cstdint>
@@ -10,7 +10,7 @@
 
 #include <rex/system/interfaces/graphics.h>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 // Whether the nx_renderer cvar asks for the native renderer.
 bool Enabled();
@@ -20,4 +20,4 @@ uint64_t SwapsPresented();
 
 std::unique_ptr<rex::system::IGraphicsSystem> CreateGraphicsSystem();
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native

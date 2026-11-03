@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace fear_nx::native {
+namespace reach_nx::native {
 
 struct VertexByteSpan {
   uint32_t offset = 0;
@@ -47,4 +47,4 @@ inline uint64_t VertexStreamStart(uint64_t head, uint64_t size, uint64_t alignme
   return start;
 }
 
-}  // namespace fear_nx::native
+}  // namespace reach_nx::native
