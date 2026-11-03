@@ -34,7 +34,9 @@ add_library(haloreach_recomp OBJECT ${HR_GENERATED})
 target_include_directories(haloreach_recomp PRIVATE
     "${HR_PROJECT}"
     "${HR_PROJECT}/src"
-    "${HR_PROJECT}/generated/default")
+    "${HR_PROJECT}/generated/default"
+    "${REXSDK_DIR}/thirdparty/xxHash"
+    "${REXSDK_DIR}/thirdparty/xxHash/cmake_unofficial")
 target_link_libraries(haloreach_recomp PRIVATE rex::runtime)
 rexglue_apply_target_settings(haloreach_recomp)
 if(EXISTS "${HR_PROJECT}/generated/default/haloreach_pch.h")
@@ -71,6 +73,8 @@ foreach(m waveshell_xbox waveslibdll l360 q10)
             "${HR_PROJECT}/src"
             "${HR_PROJECT}/generated/${m}"
             "${HR_PROJECT}/generated/default"
+            "${REXSDK_DIR}/thirdparty/xxHash"
+            "${REXSDK_DIR}/thirdparty/xxHash/cmake_unofficial"
         )
         target_link_libraries(haloreach_${m} PRIVATE rex::runtime)
         rexglue_apply_target_settings(haloreach_${m})
@@ -91,22 +95,29 @@ set(HR_APP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/static_modules.cpp"
 )
 
-add_executable(haloreach ${HR_APP_SOURCES})
+add_executable(haloreach ${HR_APP_SOURCES}
+    ${HR_PROJECT}/src/native/native_system.cpp
+    ${HR_PROJECT}/src/native/native_renderer.cpp
+    ${HR_PROJECT}/src/native/native_textures.cpp
+    ${HR_PROJECT}/src/native/native_geometry_shaders.cpp)
 target_include_directories(haloreach PRIVATE
     "${HR_PROJECT}"
     "${HR_PROJECT}/src"
     "${HR_PROJECT}/generated/default"
     "${REXSDK_DIR}/src/core"
     "${REXSDK_DIR}/src/graphics"
-    "${REXSDK_DIR}/thirdparty/glslang")
+    "${REXSDK_DIR}/thirdparty/glslang"
+    "${REXSDK_DIR}/thirdparty/xxHash"
+    "${REXSDK_DIR}/thirdparty/xxHash/cmake_unofficial")
 target_compile_definitions(haloreach PRIVATE HALOREACH_LINK_STATIC_MODULES=1)
 target_link_libraries(haloreach PRIVATE haloreach_recomp ${HR_EXTRA_TARGETS} rex::runtime)
 rexglue_configure_target(haloreach GPU_PLUGINS xenos)
+target_sources(haloreach PRIVATE $<TARGET_OBJECTS:rexglue_switch_startup>)
 
 set_property(TARGET haloreach APPEND PROPERTY LINK_DEPENDS "${REXGLUE_SWITCH_NVK_SDK}/lib/libvulkan.a")
 
-# Presupuesto de Heap en Switch (Title Takeover tiene ~3.2 GB; reservamos 2304 MB para el heap del invitado y dejamos margen para NVK/Mesa)
-set(HR_SWITCH_HEAP_MB 2304 CACHE STRING "Capped Switch heap size in MiB")
+# Presupuesto de Heap en Switch (Title Takeover: 1024 MB para newlib heap/invitado, dejando >2 GB libres para Horizon MMU y Mesa NVK)
+set(HR_SWITCH_HEAP_MB 1024 CACHE STRING "Capped Switch heap size in MiB" FORCE)
 set_source_files_properties("${REXSDK_DIR}/src/ui/runtime_switch.cpp" DIRECTORY "${REXSDK_DIR}"
     PROPERTIES COMPILE_DEFINITIONS "REX_SWITCH_HEAP_MB=${HR_SWITCH_HEAP_MB}")
 

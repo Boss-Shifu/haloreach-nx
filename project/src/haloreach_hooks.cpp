@@ -20,60 +20,22 @@ extern "C" {
 extern uint32_t __nx_nv_transfermem_size;
 uint32_t __nx_nv_transfermem_size = 24 * 1024 * 1024;
 void RexSwitchRelojesReverseHabilitar(int habilitado);
+void RexSwitchApmPedirGpuMhz(int mhz);
+void RexSwitchApmAplicar(void);
 }
-
-namespace {
-Service g_hr_sysclk_srv{};
-bool g_hr_sysclk_open = false;
-
-bool HasSmService(const char* name) {
-  const SmServiceName enc = smEncodeName(name);
-  bool has = false;
-  if (hosversionAtLeast(12, 0, 0)) {
-    TipcService* sm = smGetServiceSessionTipc();
-    if (!sm || R_FAILED(tipcDispatchInOut(sm, 65100, enc, has))) return false;
-  } else {
-    Service* sm = smGetServiceSession();
-    if (!sm || R_FAILED(serviceDispatchInOut(sm, 65100, enc, has))) return false;
-  }
-  return has;
-}
-
-void SetSysClkOverride(uint32_t module_id, uint32_t hz) {
-  struct {
-    uint32_t module_id;
-    uint32_t hz;
-  } args{module_id, hz};
-  serviceDispatchIn(&g_hr_sysclk_srv, 8 /* SysClkIpcCmd_SetOverride */, args);
-}
-
-__attribute__((destructor)) void ReleaseSwitchOverclock() {
-  if (g_hr_sysclk_open) {
-    SetSysClkOverride(0, 0);
-    SetSysClkOverride(1, 0);
-    SetSysClkOverride(2, 0);
-    serviceClose(&g_hr_sysclk_srv);
-    g_hr_sysclk_open = false;
-  }
-}
-}  // namespace
 #endif
 
 void HaloReachInitHooks() {
 #if defined(__SWITCH__)
   RexSwitchRelojesReverseHabilitar(1);
-  static const char* const kServices[] = {"sys:clk", "hoc:clk", "hocclk", "sysclk", "clk:sys", "sys:oc"};
-  for (const char* name : kServices) {
-    if (!HasSmService(name)) continue;
-    if (R_SUCCEEDED(smGetService(&g_hr_sysclk_srv, name))) {
-      g_hr_sysclk_open = true;
-      // Target 60 FPS Overclock: 1750 MHz CPU (0), 765 MHz GPU (1), 2600 MHz MEM (2)
-      SetSysClkOverride(0, 1750000000u);
-      SetSysClkOverride(1, 765000000u);
-      SetSysClkOverride(2, 2600000000u);
-      break;
-    }
+  if (R_SUCCEEDED(pmshellInitialize())) {
+    pmshellBoostApplicationThreadResourceLimit();
+    pmshellExit();
   }
+  // Solicita el perfil oficial de rendimiento de Horizon OS (apm 0x92220008: 460.8 MHz GPU en portatil / 768 MHz en dock).
+  // No fuerza overclock por sys-clk: cada usuario elige su propio overclock al entrar al juego.
+  RexSwitchApmPedirGpuMhz(460);
+  RexSwitchApmAplicar();
 #endif
 }
 
@@ -232,17 +194,89 @@ REX_HOOK_RAW(__imp__XeCryptBnQwNeRsaPubCrypt) {
 }
 
 // ============================================================================
-// 4. Optimización de Spin-Wait para los 3 núcleos ARM64 Cortex-A57 (Switch)
+// 4. Optimización de Spin-Wait de Ultra-Rendimiento para ARM64 Cortex-A57 (Switch)
 // ============================================================================
 extern "C" void autoport_spin_hint() {
-  thread_local uint32_t hints = 0;
 #if defined(__aarch64__)
   __asm__ __volatile__("yield");
 #endif
-  if (++hints == 50000 || hints % 5000000 == 0) {
-    REXLOG_WARN("[SPIN_WAIT] Thread spinning! hints={} caller={:p}", hints, __builtin_return_address(0));
+  thread_local uint32_t hints = 0;
+  if (++hints >= 2048) {
+    hints = 0;
+    std::this_thread::yield();
   }
-  if ((hints & 0x1F) == 0) {
-    std::this_thread::sleep_for(std::chrono::microseconds(50));
+}
+
+// ============================================================================
+// 5. Direct3D Command Ring Wait (sub_826C5990)
+//    Cuando el buffer de comandos de la GPU está lleno (r3 == 1), cede tiempo
+//    para que el CommandProcessor de Vulkan vacíe los paquetes PM4 sin trabar la CPU.
+// ============================================================================
+REX_EXTERN(__imp__sub_826C5990);
+extern "C" REX_FUNC(sub_826C5990) {
+  __imp__sub_826C5990(ctx, base);
+  if (ctx.r3.u32 == 1) {
+    thread_local uint32_t wait_steps = 0;
+    if (++wait_steps < 8) {
+#if defined(__aarch64__)
+      __asm__ volatile("yield" ::: "memory");
+#endif
+    } else {
+      wait_steps = 0;
+      std::this_thread::yield();
+    }
+  }
+}
+
+// ============================================================================
+// 6. XMA Audio Hardware Context Polling (sub_8292DA80)
+//    Cuando el hardware XMA no está listo (r3 == 0), cede el turno para que el
+//    hilo host XMA Decoder decodifique los paquetes de audio inmediatamente.
+// ============================================================================
+REX_EXTERN(__imp__sub_8292DA80);
+extern "C" REX_FUNC(sub_8292DA80) {
+  __imp__sub_8292DA80(ctx, base);
+  if (ctx.r3.u32 == 0) {
+    thread_local uint32_t wait_steps = 0;
+    if (++wait_steps < 8) {
+#if defined(__aarch64__)
+      __asm__ volatile("yield" ::: "memory");
+#endif
+    } else {
+      wait_steps = 0;
+      std::this_thread::yield();
+    }
+  }
+}
+
+// ============================================================================
+// 7. Funciones GapFill no registradas (0x82240218 y 0x82241910)
+//    Puntos de entrada TLS para llamadas indirectas del motor omaha_release
+// ============================================================================
+#include <rex/runtime.h>
+#include <rex/system/function_dispatcher.h>
+
+extern "C" REX_FUNC(sub_82240218) {
+  if (base && ctx.r13.u32) {
+    ctx.r10.u64 = __builtin_bswap32(*reinterpret_cast<volatile uint32_t*>(base + ctx.r13.u32));
+  } else {
+    ctx.r10.u64 = 0;
+  }
+  ctx.r3.u64 = 0;
+}
+
+extern "C" REX_FUNC(sub_82241910) {
+  if (base && ctx.r13.u32) {
+    ctx.r10.u64 = __builtin_bswap32(*reinterpret_cast<volatile uint32_t*>(base + ctx.r13.u32));
+  } else {
+    ctx.r10.u64 = 0;
+  }
+  ctx.r3.u64 = 0;
+}
+
+void RegisterMissingFunctions(rex::Runtime* rt) {
+  if (rt && rt->function_dispatcher()) {
+    rt->function_dispatcher()->SetFunction(0x82240218, sub_82240218);
+    rt->function_dispatcher()->SetFunction(0x82241910, sub_82241910);
   }
 }

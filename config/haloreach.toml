@@ -1,38 +1,56 @@
 # Halo: Reach (Title ID 4D53085B) — Nintendo Switch Runtime Configuration (60 FPS + OC 1750/765/2600)
-# Ubicación en la microSD: SD:/switch/HaloReach/haloreach.toml
+# Ubicacion en la microSD: sdmc:/switch/HaloReach/haloreach.toml
 
 [general]
 title_id = "4D53085B"
 language = "es"
 mount_cache = true
+log_to_file = true
+log_level = "info"
 
 [switch]
-# Overclock objetivo vía sys-clk / pcv: 1750 MHz CPU | 765 MHz GPU | 2600 MHz RAM
-target_cpu_mhz = 1750
-target_gpu_mhz = 765
-target_ram_mhz = 2600
-heap_mb = 2304
+# Overclock objetivo via sys-clk / pcv: 1785 MHz CPU | 921 MHz GPU | 1600 MHz RAM
+target_cpu_mhz = 1785
+target_gpu_mhz = 921
+target_ram_mhz = 1600
+# Presupuesto heap ampliado Title Takeover: 1600 MB (garantiza memoria suficiente para texturas, mapas y heaps)
+heap_mb = 1600
 gm_commit_granularity_kb = 256
 nvmap_transfermem_mb = 24
-null_page_guard = false
-protect_zero = false
+null_page_guard = true
+tolerante = 1
+
+[audio]
+audio_switch_bomba = true
+audio_switch_tramas_en_cola = 8
+audio_xma_en_trabajador = 1
 
 [graphics]
 gpu_plugin = "xenos"
+render_target_path_vulkan = "fbo"
+execute_unclipped_draw_vs_on_cpu = false
+gpu_sin_msaa = true
+native_2x_msaa = false
+gpu_atalho_resolve = true
+async_shader_compilation = true
+readback_memexport = false
+readback_memexport_fast = false
+readback_resolve = "none"
+vblank_adaptativo = true
+asset_pack = false
+asset_pack_build = false
+switch_profile_report = false
+switch_profile_stacks = false
 # Halo: Reach renderiza nativamente a 1152x720 en X360; con FSR 1 (EASU+RCAS) sube limpio a 1280x720
 window_width = 1280
 window_height = 720
-video_mode_width = 960
-video_mode_height = 540
 draw_resolution_scale_x = 1
 draw_resolution_scale_y = 1
-present_effect = "fsr"
+present_effect = "none"
 fsr_sharpness = 0.25
-vsync = false
-vulkan_allow_present_mode_immediate = true
-present_esperar_adquisicion_en_cpu = false
-render_target_path_vulkan = "fsi"
-mesa_shader_cache_disable = true
+vsync = true
+vulkan_allow_present_mode_immediate = false
+mesa_shader_cache_disable = false
 nouveau_horizon_bo_cache_mb = 192
 
 [engine_blam]
@@ -41,3 +59,6 @@ target_fps = 60
 vsync_divisor = 1
 spin_sleep_us = 20
 skip_bink_intro_on_crash = false
+
+user_language = 5
+user_country = 154
