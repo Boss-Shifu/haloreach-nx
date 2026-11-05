@@ -26,6 +26,8 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <cstdlib>
+#include <string>
 #include <set>
 #include <unordered_set>
 #include <atomic>
@@ -73,7 +75,11 @@ extern "C" {
 #include "native_vertex_fresh.h"
 #include "native_textures.h"
 
-REXCVAR_DECLARE(bool, gpu_specialize_texture_signs);
+// FH2: el SDK de Forza no define este cvar (viene de los parches de F.E.A.R.); sin el soporte en el traductor queda apagado.
+REXCVAR_DEFINE_BOOL(gpu_specialize_texture_signs, false, "GPU",
+                    "Compile each pipeline for the signedness and gamma of the textures bound "
+                    "when it is created, instead of selecting them at run time in every fetch")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(nx_native_depth24, false, "Halo Reach",
                     "Store depth in 32 bits per pixel (24-bit depth with stencil, or float "
                     "without) instead of 32-bit float with stencil, which NVIDIA GPUs keep "
@@ -98,25 +104,59 @@ REXCVAR_DEFINE_BOOL(nx_native_precise_resolve_barriers, true, "Halo Reach",
 REXCVAR_DEFINE_BOOL(nx_native_full_clear_load_op, true, "Halo Reach",
                     "Clear fully covered render areas at attachment load without loading old contents")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(nx_native_msaa, false, "Halo Reach",
+REXCVAR_DEFINE_BOOL(nx_native_msaa, true, "Halo Reach",
                     "Render with the multisampling the game asks for; off draws every target "
                     "with one sample, which costs the GPU much less memory bandwidth");
-REXCVAR_DEFINE_BOOL(nx_resolve_convert, true, "Halo Reach",
-                    "Convert color resolves like the guest: exponent bias, and clamp float "
-                    "render targets copied to fixed-point formats");
 REXCVAR_DEFINE_BOOL(nx_native_async_pipelines, true, "Halo Reach",
                     "Native renderer: compile new pipelines on a worker thread and skip the "
                     "draws that need them until they are ready, instead of stalling the frame");
+// Diagnostico (FH2): mascara de bits para descartar partes del estado de dibujo y ver que falta.
+// 1 = sin prueba de profundidad, 2 = sin culling, 4 = sin blending, 8 = lista cada resolve distinto
+// (direccion, tamano, formato) en el log, 16 = escribe en el log el primer dibujo de cada pasada.
+REXCVAR_DEFINE_STRING(nx_native_probe, "", "Halo Reach",
+                      "Comma-separated hex resolve addresses whose contents are summarized in the log");
+// Traza (FH2): a los N segundos escribe en el log los resolves y las pasadas a pantalla completa
+// (rectangulos) de unos cuadros: shaders, formatos de los destinos, constantes y texturas, como la
+// traza del SDK (gpu_traco_quadro_s), para ver que lee el tonemap final.
+REXCVAR_DEFINE_DOUBLE(nx_traza_s, 0.0, "Halo Reach",
+                      "Diagnostic: seconds after start at which resolves and full-screen passes of "
+                      "some frames are written to the log (0 = never)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_UINT32(nx_traza_cuadros, 2, "Halo Reach", "Diagnostic: frames traced by nx_traza_s")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// FH2: the CPU reads some small resolves back from guest memory for its auto
+// exposure (Gabrick75's FH2 native renderer: "4096 restores it"; without the
+// read-backs the race's exposure ends up black). These resolves are copied to
+// guest memory before the ring goes on, so the next fence already sees them.
+REXCVAR_DEFINE_UINT32(nx_leer_resueltas, 4096, "Halo Reach",
+                      "8_8_8_8 color resolves of up to this many texels are also written to guest "
+                      "memory, which the game reads for its auto exposure (0 = none)");
+REXCVAR_DEFINE_UINT32(nx_leer_cada, 1, "Halo Reach",
+                      "Read back one in N copies to each small resolve address (1 = all)");
+REXCVAR_DEFINE_BOOL(nx_resolve_convert, true, "Halo Reach",
+                    "Convert color resolves like the guest: exponent bias, and clamp float "
+                    "render targets copied to fixed-point formats");
+REXCVAR_DEFINE_UINT32(nx_depth_words, 1, "Halo Reach",
+                      "Words of float24 depth resolves: 0 none, 1 linear 24-bit, 2 20e4 (depth*2), "
+                      "3 20e4 (depth)");
+REXCVAR_DEFINE_UINT32(nx_native_debug, 0, "Halo Reach",
+                      "Diagnostic bit mask: 1 no depth test, 2 no culling, 4 no blending, 8 log every distinct resolve")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// Direccion fisica en hex (ej. "13E35000") de un resolve para presentar en lugar del frontbuffer.
+static std::vector<std::string> frame_resolve_sequence;
+REXCVAR_DEFINE_STRING(nx_native_debug_present, "", "Halo Reach",
+                      "Diagnostic: present the resolve at this hex address instead of the frontbuffer")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(nx_native_trace_output, false, "Halo Reach",
                     "Log bounded unique native renderer swap, viewport, and Xenos resolve state for display diagnostics");
 
 // Freshness + safe-span checks adapted from Juansolo457/fear360-recomp,
 // fc5722793f71217ca888c329d654bba6f9eeeedc, port-nx/src/native/native_renderer.cpp.
 // Preserve content-based upload reuse and the local stream pin/flush safeguards.
-REXCVAR_DEFINE_BOOL(haloreach_vertex_fresh, true, "Halo Reach",
+REXCVAR_DEFINE_BOOL(haloreach_vertex_fresh, true, "FH2",
                     "Check active vertex/index data on every draw; reuse identical uploads")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(haloreach_vertex_spans, true, "Halo Reach",
+REXCVAR_DEFINE_BOOL(haloreach_vertex_spans, true, "FH2",
                     "Check only reachable vertex spans when the shader proves them safe")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
@@ -573,6 +613,48 @@ struct Renderer::Impl {
   uint64_t frame = 1;
   uint64_t completed_frame = 0;
 
+  // Diagnostic (nx_native_probe): on one resolve in 120 to each listed
+  // address, the written rectangle is copied to host memory and, once its
+  // frame completes, its average and maximum colors are logged.
+  struct Probe {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkDeviceSize size = 0;
+    uint32_t memory_type = 0;
+    uint8_t* mapping = nullptr;
+    bool pending = false;
+    uint64_t pending_frame = 0;
+    uint64_t last_frame = 0;
+    uint32_t width = 0, height = 0, logged = 0;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    bool depth = false;
+  };
+  // Read-back of small resolves to guest memory (nx_leer_resueltas).
+  VkBuffer readback_buffer = VK_NULL_HANDLE;
+  VkDeviceMemory readback_memory = VK_NULL_HANDLE;
+  uint32_t readback_memory_type = 0;
+  uint8_t* readback_mapping = nullptr;
+  VkDeviceSize readback_size = 0;
+  struct PendingReadback {
+    bool active = false;
+    uint32_t base = 0, pitch = 0, guest_height = 0, width = 0, height = 0, endian = 0, swap = 0;
+  } pending_readback;
+  std::unordered_map<uint32_t, uint64_t> readback_counts;
+  uint64_t readbacks_done = 0;
+  bool RecordReadback(VkCommandBuffer c, ResolveDestination& dest, int32_t x, int32_t y,
+                      uint32_t width, uint32_t height);
+  void FinishReadback();
+  std::chrono::steady_clock::time_point traza_inicio = std::chrono::steady_clock::now();
+  bool traza_activa = false, traza_hecha = false;
+  uint32_t traza_restantes = 0, traza_n = 0;
+  void TrazaSwap(uint32_t frontbuffer);
+  void TrazaDibujo(const RegisterFile& r, uint32_t prim, uint32_t count, uint32_t skip_reason);
+  std::unordered_map<uint64_t, Probe> probes;
+  std::set<uint32_t> probe_addresses;
+  bool probe_parsed = false;
+  void ProbeResolve(VkCommandBuffer c, uint32_t address, ResolveDestination& dest, int32_t x,
+                    int32_t y, uint32_t width, uint32_t height, bool depth);
+
   // Opt-in, bounded output diagnostics. These sets only grow during a trace run.
   struct TraceResolveRect {
     uint32_t x, y, width, height, allocation_width, allocation_height;
@@ -624,7 +706,7 @@ struct Renderer::Impl {
   VkPipeline copy_color_pipeline = VK_NULL_HANDLE;
   bool ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkImageView dest, int32_t sx,
                         int32_t sy, int32_t dx, int32_t dy, uint32_t width, uint32_t height,
-                        float scale = 1.0f, bool clamp01 = false);
+                        float scale = 1.0f, float maximum = 0.0f);
   bool CreateDepthConversion();
 
   // GPU time by render pass and resolve (nx_native_gpu_profile): on one
@@ -1111,18 +1193,8 @@ struct Renderer::Impl {
     if (d.flags & kDrawViewport) f.vkCmdSetViewport(c, 0, 1, &d.viewport);
     if (d.flags & kDrawScissor) f.vkCmdSetScissor(c, 0, 1, &d.scissor);
     if (d.flags & kDrawDepthBias) {
-      if (d.bias_exact_unorm) {
-        VkDepthBiasRepresentationInfoEXT representation{};
-        representation.sType = VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT;
-        representation.depthBiasRepresentation =
-            VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
-        representation.depthBiasExact = VK_TRUE;
-        VkDepthBiasInfoEXT info{};
-        info.sType = VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT;
-        info.pNext = &representation;
-        info.depthBiasConstantFactor = d.bias_constant;
-        info.depthBiasSlopeFactor = d.bias_slope;
-        f.vkCmdSetDepthBias(c, info.depthBiasConstantFactor, info.depthBiasClamp, info.depthBiasSlopeFactor);
+      if (false) {
+        // FH2: VK_EXT_depth_bias_control no esta cableado en el SDK; solo la ruta clasica.
       } else {
         f.vkCmdSetDepthBias(c, d.bias_constant, 0.0f, d.bias_slope);
       }
@@ -1731,9 +1803,7 @@ struct Renderer::Impl {
   void Draw(const uint32_t* immediate_indices, uint32_t immediate_index_words);
   bool GetFastClearRectangle(StencilClearRect& rect, bool require_zero_depth,
                              uint32_t required_zero_interpolators = 0,
-                             float required_constant_depth = -1.0f,
-                             float* out_constant_depth = nullptr,
-                             float (*out_constant_interpolators)[4] = nullptr);
+                             float required_constant_depth = -1.0f);
   void MirrorStencilClear();
   void MirrorZeroDepthColorClear();
   void MirrorZeroColorAliasClear();
@@ -1769,7 +1839,7 @@ bool Renderer::Impl::Initialize() {
     REXLOG_ERROR("[native] The native renderer needs dynamic rendering");
     return false;
   }
-  specialize_signs = false;
+  specialize_signs = REXCVAR_GET(gpu_specialize_texture_signs);
   multisample = REXCVAR_GET(nx_native_msaa);
   REXLOG_INFO("[native] MSAA: {}",
               multisample ? "honoring guest sample count" : "disabled (single-sample host targets)");
@@ -1949,9 +2019,12 @@ bool Renderer::Impl::Initialize() {
   query_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
   query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
   query_info.queryCount = kSubmissionSlots * 2;
-  if (false &&
+  VkPhysicalDeviceProperties physical_props{};
+  device->vulkan_instance()->functions().vkGetPhysicalDeviceProperties(device->physical_device(),
+                                                                     &physical_props);
+  if (physical_props.limits.timestampPeriod > 0.0f &&
       dfn().vkCreateQueryPool(vk, &query_info, nullptr, &timestamps) == VK_SUCCESS) {
-    timestamp_period = 1.0f;
+    timestamp_period = physical_props.limits.timestampPeriod;
   } else {
     timestamps = VK_NULL_HANDLE;
   }
@@ -2041,8 +2114,7 @@ bool Renderer::Impl::Initialize() {
         uint32_t(DepthFormatFor(uint32_t(xenos::DepthRenderTargetFormat::kD24FS8))));
   }
   REXLOG_INFO("[native] D24S8 depth bias: {}",
-      depth24 && false &&
-              false
+      depth24 && false
           ? "exact D24 UNORM quantum (VK_EXT_depth_bias_control)"
           : "legacy format-dependent offset (exact D24 bias unavailable)");
   if (REXCVAR_GET(nx_native_gpu_profile) && timestamps) {
@@ -2216,10 +2288,379 @@ bool Renderer::Impl::CreateDepthConversion() {
   return true;
 }
 
+static float ProbeHalfToFloat(uint16_t h) {
+  const uint32_t sign = uint32_t(h >> 15) << 31;
+  uint32_t exponent = (h >> 10) & 0x1F;
+  uint32_t mantissa = h & 0x3FF;
+  uint32_t bits;
+  if (exponent == 0) {
+    if (mantissa == 0) {
+      bits = sign;
+    } else {
+      exponent = 127 - 15 + 1;
+      while (!(mantissa & 0x400)) {
+        mantissa <<= 1;
+        --exponent;
+      }
+      mantissa &= 0x3FF;
+      bits = sign | (exponent << 23) | (mantissa << 13);
+    }
+  } else if (exponent == 31) {
+    bits = sign | 0x7F800000u | (mantissa << 13);
+  } else {
+    bits = sign | ((exponent + 127 - 15) << 23) | (mantissa << 13);
+  }
+  float f;
+  std::memcpy(&f, &bits, sizeof(f));
+  return f;
+}
+
+bool Renderer::Impl::RecordReadback(VkCommandBuffer c, ResolveDestination& dest, int32_t x,
+                                    int32_t y, uint32_t width, uint32_t height) {
+  const VkDeviceSize needed = VkDeviceSize(width) * height * 4;
+  if (!needed) return false;
+  if (readback_size < needed) {
+    if (readback_buffer) {
+      // Nothing pending reads it: each read-back is waited for in its resolve.
+      dfn().vkDestroyBuffer(vk, readback_buffer, nullptr);
+      dfn().vkFreeMemory(vk, readback_memory, nullptr);
+      readback_buffer = VK_NULL_HANDLE;
+      readback_memory = VK_NULL_HANDLE;
+      readback_mapping = nullptr;
+      readback_size = 0;
+    }
+    const VkDeviceSize size = std::max(needed, VkDeviceSize(64 * 64 * 4));
+    VkDeviceSize allocated = 0;
+    if (!rex::ui::vulkan::util::CreateDedicatedAllocationBuffer(
+            device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            rex::ui::vulkan::util::MemoryPurpose::kReadback, readback_buffer, readback_memory,
+            &readback_memory_type, &allocated)) {
+      readback_buffer = VK_NULL_HANDLE;
+      return false;
+    }
+    void* mapping = nullptr;
+    if (dfn().vkMapMemory(vk, readback_memory, 0, VK_WHOLE_SIZE, 0, &mapping) != VK_SUCCESS) {
+      dfn().vkDestroyBuffer(vk, readback_buffer, nullptr);
+      dfn().vkFreeMemory(vk, readback_memory, nullptr);
+      readback_buffer = VK_NULL_HANDLE;
+      readback_memory = VK_NULL_HANDLE;
+      return false;
+    }
+    readback_mapping = static_cast<uint8_t*>(mapping);
+    readback_size = size;
+  }
+  VkMemoryBarrier before = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
+                                VK_ACCESS_SHADER_WRITE_BIT,
+                            VK_ACCESS_TRANSFER_READ_BIT};
+  dfn().vkCmdPipelineBarrier(c,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &before, 0, nullptr, 0,
+                             nullptr);
+  VkBufferImageCopy region = {};
+  region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.imageOffset = {x, y, 0};
+  region.imageExtent = {width, height, 1};
+  dfn().vkCmdCopyImageToBuffer(c, dest.image, VK_IMAGE_LAYOUT_GENERAL, readback_buffer, 1,
+                               &region);
+  VkMemoryBarrier after = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+                           VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                           VK_ACCESS_HOST_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                               VK_ACCESS_TRANSFER_WRITE_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+  dfn().vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             0, 1, &after, 0, nullptr, 0, nullptr);
+  return true;
+}
+
+void Renderer::Impl::FinishReadback() {
+  PendingReadback p = pending_readback;
+  pending_readback.active = false;
+  if (!p.active || !readback_mapping) return;
+  // The guest reads it after the next fence: submit and wait now (one GPU wait
+  // per read-back; FH2 makes about 3 a frame, at the start of the frame).
+  Submit();
+  WaitSubmission(current());
+  if (!(device->memory_types().host_coherent & (uint32_t(1) << readback_memory_type))) {
+    VkMappedMemoryRange range = {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, readback_memory,
+                                 0, VK_WHOLE_SIZE};
+    dfn().vkInvalidateMappedMemoryRanges(vk, 1, &range);
+  }
+  // Each texel is a permutation of its 4 bytes (R/B swap, then the copy's
+  // endianness), as Gabrick75's EscribirLecturas does it.
+  const xenos::Endian endian =
+      p.endian <= 3 ? static_cast<xenos::Endian>(p.endian) : xenos::Endian::k8in32;
+  const uint32_t permutation = xenos::GpuSwap(p.swap ? 0x03000102u : 0x03020100u, endian);
+  const uint32_t b0 = permutation & 0xFF, b1 = (permutation >> 8) & 0xFF,
+                 b2 = (permutation >> 16) & 0xFF, b3 = (permutation >> 24) & 0xFF;
+  if ((b0 | b1 | b2 | b3) > 3) return;
+  const uint32_t pitch = (p.pitch + 31) & ~31u;
+  uint8_t* guest = memory->TranslatePhysical<uint8_t*>(0);
+  const uint8_t* src = readback_mapping;
+  for (uint32_t j = 0; j < p.height; ++j) {
+    if (p.guest_height && j >= p.guest_height) break;
+    for (uint32_t i = 0; i < p.width && i < pitch; ++i, src += 4) {
+      const uint64_t address = uint64_t(p.base) +
+          uint32_t(rex::graphics::texture_util::GetTiledOffset2D(int32_t(i), int32_t(j), pitch, 2));
+      if (address + 4 > 0x20000000u) continue;
+      uint8_t* d = guest + address;
+      const uint8_t t0 = src[b0], t1 = src[b1], t2 = src[b2], t3 = src[b3];
+      d[0] = t0;
+      d[1] = t1;
+      d[2] = t2;
+      d[3] = t3;
+    }
+    if (p.width > pitch) src += size_t(p.width - pitch) * 4;
+  }
+  if (readbacks_done++ == 0) {
+    REXLOG_INFO("[native] read-back of small resolves to guest memory (first: {:08X} {}x{})",
+                p.base, p.width, p.height);
+  }
+}
+
+static float TrazaFloat(const RegisterFile& r, uint32_t index) {
+  uint32_t bits = r[index];
+  float value;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+
+void Renderer::Impl::TrazaSwap(uint32_t frontbuffer) {
+  const double espera = REXCVAR_GET(nx_traza_s);
+  if (espera <= 0.0 || traza_hecha) return;
+  if (traza_activa) {
+    REXLOG_INFO("[traza] ---- swap {:08X} ----", frontbuffer);
+    if (traza_restantes <= 1) {
+      traza_activa = false;
+      traza_hecha = true;
+      REXLOG_INFO("[traza] ---- fin ----");
+    } else {
+      --traza_restantes;
+    }
+  } else if (std::chrono::duration<double>(std::chrono::steady_clock::now() - traza_inicio)
+                 .count() >= espera) {
+    traza_activa = true;
+    traza_restantes = std::max(1u, REXCVAR_GET(nx_traza_cuadros));
+    traza_n = 0;
+    REXLOG_INFO("[traza] ---- inicio ----");
+  }
+}
+
+void Renderer::Impl::TrazaDibujo(const RegisterFile& r, uint32_t prim, uint32_t count,
+                                 uint32_t skip_reason) {
+  const uint32_t n = traza_n++;
+  VulkanShader* vs = active_vs;
+  VulkanShader* ps = active_ps;
+  std::string rts;
+  const uint32_t color_mask = r[rex::graphics::XE_GPU_REG_RB_COLOR_MASK];
+  for (uint32_t i = 0; i < 4; ++i) {
+    if ((color_mask >> (4 * i)) & 0xF) {
+      const uint32_t info = r[reg::RB_COLOR_INFO::rt_register_indices[i]];
+      rts += fmt::format(" rt{}:fmt{} base{} expb{} mask{:X}", i, (info >> 16) & 0xF, info & 0xFFF,
+                         int32_t(info << 6) >> 26, (color_mask >> (4 * i)) & 0xF);
+    }
+  }
+  auto texturas = [&](VulkanShader* shader, const char* prefijo) {
+    std::string out;
+    if (!shader || !shader->is_ucode_analyzed()) return out;
+    uint32_t vistos = 0;
+    for (const auto& binding : shader->texture_bindings()) {
+      if (vistos & (1u << binding.fetch_constant)) continue;
+      vistos |= 1u << binding.fetch_constant;
+      xenos::xe_gpu_texture_fetch_t f = r.GetTextureFetch(binding.fetch_constant);
+      out += fmt::format(" {}{}:fmt{} {:08X} {}x{} exp{} sw{:03X}", prefijo, binding.fetch_constant,
+                         uint32_t(f.format), uint32_t(f.base_address) << 12,
+                         (f.dword_2 & 0x1FFF) + 1, ((f.dword_2 >> 13) & 0x1FFF) + 1,
+                         int32_t(f.exp_adjust), uint32_t(f.swizzle));
+    }
+    return out;
+  };
+  auto constantes = [&](VulkanShader* shader, uint32_t base) {
+    std::string out;
+    if (!shader || !shader->is_ucode_analyzed()) return out;
+    const auto& map = shader->constant_register_map();
+    for (uint32_t i = 0; i < 256; ++i) {
+      if (!(map.float_bitmap[i >> 6] & (uint64_t(1) << (i & 63)))) continue;
+      out += fmt::format(" c{}({:.5g} {:.5g} {:.5g} {:.5g})", i, TrazaFloat(r, base + 4 * i),
+                         TrazaFloat(r, base + 4 * i + 1), TrazaFloat(r, base + 4 * i + 2),
+                         TrazaFloat(r, base + 4 * i + 3));
+    }
+    return out;
+  };
+  REXLOG_INFO("[traza] {:4} DRAW prim {} n {} VS {:016X} PS {:016X} skip {} blend0 {:08X}{}{}{}", n,
+              prim, count, vs ? vs->ucode_data_hash() : 0, ps ? ps->ucode_data_hash() : 0,
+              int32_t(skip_reason == UINT32_MAX ? -1 : int32_t(skip_reason)),
+              r[rex::graphics::XE_GPU_REG_RB_BLENDCONTROL0], rts, texturas(vs, "vt"),
+              texturas(ps, "t"));
+  if (prim == uint32_t(xenos::PrimitiveType::kRectangleList)) {
+    REXLOG_INFO("[traza] {:4} VS{}", n, constantes(vs, rex::graphics::XE_GPU_REG_SHADER_CONSTANT_000_X));
+    REXLOG_INFO("[traza] {:4} PS{}", n, constantes(ps, rex::graphics::XE_GPU_REG_SHADER_CONSTANT_256_X));
+  }
+}
+
+void Renderer::Impl::ProbeResolve(VkCommandBuffer c, uint32_t address, ResolveDestination& dest,
+                                  int32_t x, int32_t y, uint32_t width, uint32_t height,
+                                  bool depth) {
+  if (!probe_parsed) {
+    probe_parsed = true;
+    const std::string text = REXCVAR_GET(nx_native_probe);
+    size_t start = 0;
+    while (start < text.size()) {
+      size_t end = text.find(',', start);
+      if (end == std::string::npos) end = text.size();
+      const std::string item = text.substr(start, end - start);
+      if (!item.empty()) {
+        probe_addresses.insert(uint32_t(std::strtoul(item.c_str(), nullptr, 16)) & 0x1FFFFFFF);
+      }
+      start = end + 1;
+    }
+  }
+  if (probe_addresses.empty() || !probe_addresses.count(address)) return;
+  // One probe per address and size: the same address holds tiles and full-screen images.
+  Probe& probe = probes[uint64_t(address) | (uint64_t(width) << 32) | (uint64_t(height) << 48)];
+  // Report a finished capture.
+  if (probe.pending && probe.pending_frame <= completed_frame) {
+    probe.pending = false;
+    if (!(device->memory_types().host_coherent & (uint32_t(1) << probe.memory_type))) {
+      VkMappedMemoryRange range = {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, probe.memory,
+                                   0, VK_WHOLE_SIZE};
+      dfn().vkInvalidateMappedMemoryRanges(vk, 1, &range);
+    }
+    double sum[4] = {};
+    float maximum[4] = {-1e30f, -1e30f, -1e30f, -1e30f};
+    float minimum[4] = {1e30f, 1e30f, 1e30f, 1e30f};
+    uint32_t bad = 0;
+    const uint32_t count = probe.width * probe.height;
+    for (uint32_t i = 0; i < count; ++i) {
+      float v[4] = {0, 0, 0, 0};
+      uint32_t channels = 4;
+      const uint8_t* p = probe.mapping;
+      switch (probe.format) {
+        case VK_FORMAT_R16G16B16A16_SFLOAT: {
+          uint16_t h[4];
+          std::memcpy(h, p + size_t(i) * 8, 8);
+          for (int k = 0; k < 4; ++k) v[k] = ProbeHalfToFloat(h[k]);
+          break;
+        }
+        case VK_FORMAT_R32_SFLOAT:
+          std::memcpy(&v[0], p + size_t(i) * 4, 4);
+          channels = 1;
+          break;
+        case VK_FORMAT_A2B10G10R10_UNORM_PACK32: {
+          uint32_t w;
+          std::memcpy(&w, p + size_t(i) * 4, 4);
+          v[0] = float(w & 1023) / 1023.0f;
+          v[1] = float((w >> 10) & 1023) / 1023.0f;
+          v[2] = float((w >> 20) & 1023) / 1023.0f;
+          v[3] = float(w >> 30) / 3.0f;
+          break;
+        }
+        default:
+          for (int k = 0; k < 4; ++k) v[k] = float(p[size_t(i) * 4 + k]) / 255.0f;
+          break;
+      }
+      for (uint32_t k = 0; k < channels; ++k) {
+        if (!std::isfinite(v[k])) {
+          ++bad;
+          continue;
+        }
+        sum[k] += v[k];
+        maximum[k] = std::max(maximum[k], v[k]);
+        minimum[k] = std::min(minimum[k], v[k]);
+      }
+    }
+    if (count && probe.logged < 40) {
+      ++probe.logged;
+      const float* first = nullptr;
+      (void)first;
+      REXLOG_INFO(
+          "[native][probe] {:08X} {}x{} fmt={} depth={} avg=({:.4f},{:.4f},{:.4f},{:.4f}) "
+          "min=({:.4f},{:.4f},{:.4f},{:.4f}) max=({:.4f},{:.4f},{:.4f},{:.4f}) nonfinite={}",
+          address, probe.width, probe.height, uint32_t(probe.format), probe.depth,
+          sum[0] / count, sum[1] / count, sum[2] / count, sum[3] / count, minimum[0], minimum[1],
+          minimum[2], minimum[3], maximum[0], maximum[1], maximum[2], maximum[3], bad);
+    }
+  }
+  if (probe.pending || frame < probe.last_frame + 120 || probe.logged >= 40) return;
+  uint32_t bpp = dest.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+  if (dest.format != VK_FORMAT_R16G16B16A16_SFLOAT && dest.format != VK_FORMAT_R32_SFLOAT &&
+      dest.format != VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+      dest.format != VK_FORMAT_R8G8B8A8_UNORM) {
+    return;
+  }
+  const VkDeviceSize needed = VkDeviceSize(width) * height * bpp;
+  if (!needed || needed > (VkDeviceSize(16) << 20)) return;
+  if (probe.size < needed) {
+    if (probe.buffer) {
+      dfn().vkDestroyBuffer(vk, probe.buffer, nullptr);
+      dfn().vkFreeMemory(vk, probe.memory, nullptr);
+      probe.buffer = VK_NULL_HANDLE;
+      probe.memory = VK_NULL_HANDLE;
+      probe.mapping = nullptr;
+      probe.size = 0;
+    }
+    VkDeviceSize allocated = 0;
+    if (!rex::ui::vulkan::util::CreateDedicatedAllocationBuffer(
+            device, needed, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            rex::ui::vulkan::util::MemoryPurpose::kReadback, probe.buffer, probe.memory,
+            &probe.memory_type, &allocated)) {
+      probe.buffer = VK_NULL_HANDLE;
+      return;
+    }
+    void* mapping = nullptr;
+    if (dfn().vkMapMemory(vk, probe.memory, 0, VK_WHOLE_SIZE, 0, &mapping) != VK_SUCCESS) {
+      dfn().vkDestroyBuffer(vk, probe.buffer, nullptr);
+      dfn().vkFreeMemory(vk, probe.memory, nullptr);
+      probe.buffer = VK_NULL_HANDLE;
+      probe.memory = VK_NULL_HANDLE;
+      return;
+    }
+    probe.mapping = static_cast<uint8_t*>(mapping);
+    probe.size = needed;
+  }
+  VkMemoryBarrier before = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
+                                VK_ACCESS_SHADER_WRITE_BIT,
+                            VK_ACCESS_TRANSFER_READ_BIT};
+  dfn().vkCmdPipelineBarrier(c,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &before, 0, nullptr, 0,
+                             nullptr);
+  VkBufferImageCopy region = {};
+  region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.imageOffset = {x, y, 0};
+  region.imageExtent = {width, height, 1};
+  dfn().vkCmdCopyImageToBuffer(c, dest.image, VK_IMAGE_LAYOUT_GENERAL, probe.buffer, 1, &region);
+  VkMemoryBarrier after = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+                           VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                           VK_ACCESS_HOST_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                               VK_ACCESS_TRANSFER_WRITE_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+  dfn().vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             0, 1, &after, 0, nullptr, 0, nullptr);
+  probe.pending = true;
+  probe.pending_frame = frame;
+  probe.last_frame = frame;
+  probe.width = width;
+  probe.height = height;
+  probe.format = dest.format;
+  probe.depth = depth;
+}
+
 bool Renderer::Impl::ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkImageView dest,
                                       int32_t sx, int32_t sy, int32_t dx, int32_t dy,
                                       uint32_t width, uint32_t height, float scale,
-                                      bool clamp01) {
+                                      float maximum) {
   if (!copy_color_pipeline || !width || !height) return false;
   VkDescriptorSet set = AllocateSet(depth_copy_set_layout);
   if (!set) return false;
@@ -2248,9 +2689,9 @@ bool Renderer::Impl::ComputeColorCopy(VkCommandBuffer c, VkImageView source, VkI
           VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &before, 0, nullptr, 0, nullptr);
-  int32_t params[8] = {sx, sy, dx, dy, int32_t(width), int32_t(height), 0,
-                       int32_t(clamp01 ? 1 : 0)};
+  int32_t params[8] = {sx, sy, dx, dy, int32_t(width), int32_t(height), 0, 0};
   std::memcpy(&params[6], &scale, sizeof(float));
+  std::memcpy(&params[7], &maximum, sizeof(float));
   dfn().vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_COMPUTE, copy_color_pipeline);
   dfn().vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_COMPUTE, copy_color_layout, 0, 1, &set,
                                 0, nullptr);
@@ -2999,7 +3440,6 @@ RenderTarget* Renderer::Impl::GetRenderTarget(const RenderTargetKey& requested_k
   rt->format = key.is_depth ? DepthFormatFor(key.format)
                             : ColorFormatToVk(xenos::ColorRenderTargetFormat(key.format));
   rt->last_used_frame = frame;
-  rt->last_draw_guest_msaa = old ? old->last_draw_guest_msaa : requested_key.guest_msaa;
   const bool preserve_old = old && !replace_for_zcull;
   rt->zcull_compatible = want_zcull && !preserve_old;
   VkImageCreateInfo info = {};
@@ -3545,9 +3985,6 @@ bool Renderer::Impl::BuildDrawSetup(uint32_t initiator_value) {
                                       (guest_msaa >= 1 ? 8 : 16)
                                 : 2048;
     targets.color[i] = GetRenderTarget(key, std::min(needed_height, rows));
-    if (targets.color[i]) {
-      targets.color[i]->last_draw_guest_msaa = guest_msaa;
-    }
   }
   if (depth_used) {
     auto depth_info = r.Get<reg::RB_DEPTH_INFO>();
@@ -3641,6 +4078,17 @@ bool Renderer::Impl::BuildDrawSetup(uint32_t initiator_value) {
     key.write_masks |= mask << (4 * i);
     uint32_t blend = r[reg::RB_BLENDCONTROL::rt_register_indices[i]] & 0x1FFF1FFF;
     key.blend[i] = mask ? blend : 0x00010001;
+  }
+  {
+    const uint32_t dbg = REXCVAR_GET(nx_native_debug);
+    if (dbg & 1) {
+      key.depth_test = 0;
+      key.depth_write = 0;
+    }
+    if (dbg & 2) key.cull_mode = 0;
+    if (dbg & 4) {
+      for (uint32_t i = 0; i < 4; ++i) key.blend[i] = 0x00010001;
+    }
   }
   if (specialize_signs) {
     for (const VulkanShader* shader : stage_shaders) {
@@ -3805,6 +4253,9 @@ void Renderer::Impl::Draw(const uint32_t* immediate_indices, uint32_t immediate_
     }
   }
   DrawSetup& st = setup;
+  if (traza_activa && initiator.prim_type == xenos::PrimitiveType::kRectangleList) {
+    TrazaDibujo(r, uint32_t(initiator.prim_type), initiator.num_indices, st.skip_reason);
+  }
   if (st.skip_reason != UINT32_MAX) {
     return skip(st.skip_reason);
   }
@@ -4558,9 +5009,7 @@ void Renderer::Impl::Draw(const uint32_t* immediate_indices, uint32_t immediate_
 // stencil tests, shadow volumes, depth and color writes are left untouched.
 bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_zero_depth,
                                            uint32_t required_zero_interpolators,
-                                           float required_constant_depth,
-                                           float* out_constant_depth,
-                                           float (*out_constant_interpolators)[4]) {
+                                           float required_constant_depth) {
   const DrawSetup& st = setup;
   const RegisterFile& r = *regs;
   // Derive the actual three corners, never assume the whole scissor is cleared.
@@ -4602,6 +5051,9 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
     if (!std::isfinite(scale_z) || scale_z < 0.0f) return false;
   }
   if (required_constant_depth >= 0.0f) {
+    // This path mirrors one known D24 guest word. Keep the host depth mapping
+    // identity so the interpreted VS Z is also the rasterized D24 value.
+    // The caller separately requires depth bias zero and viewport [0, 1].
     if (!std::isfinite(required_constant_depth) || required_constant_depth > 1.0f ||
         (vte.vport_z_offset_ena &&
          r.Get<float>(rex::graphics::XE_GPU_REG_PA_CL_VPORT_ZOFFSET) != 0.0f) ||
@@ -4619,10 +5071,6 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
                             ? r.Get<float>(rex::graphics::XE_GPU_REG_PA_CL_VPORT_XOFFSET) : 0.0f;
   float offset_y = vte.vport_y_offset_ena
                             ? r.Get<float>(rex::graphics::XE_GPU_REG_PA_CL_VPORT_YOFFSET) : 0.0f;
-  const float scale_z = vte.vport_z_scale_ena
-                            ? r.Get<float>(rex::graphics::XE_GPU_REG_PA_CL_VPORT_ZSCALE) : 1.0f;
-  const float offset_z = vte.vport_z_offset_ena
-                            ? r.Get<float>(rex::graphics::XE_GPU_REG_PA_CL_VPORT_ZOFFSET) : 0.0f;
   if (r.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero) {
     offset_x += 0.5f;
     offset_y += 0.5f;
@@ -4637,7 +5085,6 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
   const uint32_t index_max = r.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
   float xs[3], ys[3];
   float first_w = 0.0f;
-  float first_z = 0.0f;
   for (uint32_t i = 0; i < 3; ++i) {
     sink = PositionSink();
     std::fill_n(interpreter.temp_registers(), xenos::kMaxShaderTempRegisters * 4, 0.0f);
@@ -4650,34 +5097,11 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
     if (required_constant_depth >= 0.0f &&
         !IsConstantDepthClearVertex(sink.position[2], sink.position[3], vte.vtx_z_fmt,
                                     required_constant_depth)) return false;
-    if (out_constant_depth) {
-      float z = sink.position[2];
-      if (!vte.vtx_z_fmt) {
-        const float w = vte.vtx_w0_fmt ? sink.position[3] : 1.0f / sink.position[3];
-        z /= w;
-      }
-      z = z * scale_z + offset_z;
-      if (!std::isfinite(z)) return false;
-      const float max_guest_z =
-          r.Get<reg::RB_DEPTH_INFO>().depth_format == xenos::DepthRenderTargetFormat::kD24FS8
-              ? 2.0f
-              : 1.0f;
-      z = std::clamp(z, 0.0f, max_guest_z);
-      if (!i) first_z = z;
-      else if (z != first_z) return false;
-    }
     for (uint32_t interpolator = 0; interpolator < xenos::kMaxInterpolators; ++interpolator) {
       if (!(required_zero_interpolators & (1u << interpolator))) continue;
       if (sink.interpolator_written[interpolator] != 0xFu) return false;
       for (uint32_t component = 0; component < 4; ++component) {
-        const float val = sink.interpolators[interpolator][component];
-        if (!std::isfinite(val)) return false;
-        if (out_constant_interpolators) {
-          if (!i) out_constant_interpolators[interpolator][component] = val;
-          else if (val != out_constant_interpolators[interpolator][component]) return false;
-        } else if (val != 0.0f) {
-          return false;
-        }
+        if (sink.interpolators[interpolator][component] != 0.0f) return false;
       }
     }
     // With depth clamp enabled, positive W and nonnegative Z scale, any
@@ -4697,9 +5121,6 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
     if (!std::isfinite(xs[i]) || !std::isfinite(ys[i]) ||
         std::abs(xs[i]) > 16384.0f || std::abs(ys[i]) > 16384.0f ||
         xs[i] != std::round(xs[i]) || ys[i] != std::round(ys[i])) return false;
-  }
-  if (out_constant_depth) {
-    *out_constant_depth = first_z;
   }
   const float x0 = std::min({xs[0], xs[1], xs[2]});
   const float x1 = std::max({xs[0], xs[1], xs[2]});
@@ -4724,70 +5145,16 @@ bool Renderer::Impl::GetFastClearRectangle(StencilClearRect& rect, bool require_
   return rect.x0 < rect.x1 && rect.y0 < rect.y1;
 }
 
-namespace {
-void DecodeEdramColorClearValue(xenos::ColorRenderTargetFormat format, uint64_t value,
-                                VkClearColorValue& out_color) {
-  out_color = {};
-  using F = xenos::ColorRenderTargetFormat;
-  switch (format) {
-    case F::k_8_8_8_8:
-    case F::k_8_8_8_8_GAMMA:
-      for (uint32_t j = 0; j < 4; ++j) {
-        out_color.float32[j] = float((value >> (j * 8)) & 0xFF) / 255.0f;
-      }
-      break;
-    case F::k_2_10_10_10:
-    case F::k_2_10_10_10_AS_10_10_10_10:
-      for (uint32_t j = 0; j < 3; ++j) {
-        out_color.float32[j] = float((value >> (j * 10)) & 0x3FF) / 1023.0f;
-      }
-      out_color.float32[3] = float((value >> 30) & 0x3) / 3.0f;
-      break;
-    case F::k_2_10_10_10_FLOAT:
-    case F::k_2_10_10_10_FLOAT_AS_16_16_16_16:
-      for (uint32_t j = 0; j < 3; ++j) {
-        out_color.float32[j] = xenos::Float7e3To32((value >> (j * 10)) & 0x3FF);
-      }
-      out_color.float32[3] = float((value >> 30) & 0x3) / 3.0f;
-      break;
-    case F::k_16_16_FLOAT:
-    case F::k_16_16_16_16_FLOAT:
-      for (uint32_t j = 0; j < 4; ++j) {
-        out_color.float32[j] =
-            rex::xenos_half_to_float(uint16_t((value >> (j * 16)) & 0xFFFF));
-      }
-      break;
-    case F::k_16_16:
-    case F::k_16_16_16_16:
-      for (uint32_t j = 0; j < 4; ++j) {
-        out_color.float32[j] = std::max(
-            float(int16_t((value >> (j * 16)) & 0xFFFF)) * (1.0f / 32767.0f), -1.0f);
-      }
-      break;
-    case F::k_32_FLOAT: {
-      uint32_t bits = uint32_t(value);
-      std::memcpy(&out_color.float32[0], &bits, 4);
-    } break;
-    case F::k_32_32_FLOAT: {
-      uint32_t bits[2] = {uint32_t(value), uint32_t(value >> 32)};
-      std::memcpy(out_color.float32, bits, 8);
-    } break;
-    default:
-      break;
-  }
-}
-}  // namespace
-
 void Renderer::Impl::MirrorStencilClear() {
   const DrawSetup& st = setup;
   RenderTarget* source = st.targets.depth;
   const RegisterFile& r = *regs;
   const auto initiator = r.Get<reg::VGT_DRAW_INITIATOR>();
   const auto& depth = st.depth_control;
-  const bool clear_z = depth.z_enable != 0;
-  const bool clear_s = depth.stencil_enable != 0 && source && HasStencil(source->format);
-  if (!source || st.ps || (!clear_z && !clear_s) ||
+  if (!source || !HasStencil(source->format) || st.ps || depth.z_enable ||
       st.primitive_polygonal || !device->properties().depthClamp ||
+      !depth.stencil_enable || depth.stencilfunc != xenos::CompareFunction::kAlways ||
+      depth.stencilzpass != xenos::StencilOp::kReplace ||
       initiator.prim_type != xenos::PrimitiveType::kRectangleList ||
       initiator.source_select != xenos::SourceSelect::kAutoIndex ||
       initiator.num_indices != 3 || !r.Get<reg::PA_CL_CLIP_CNTL>().clip_disable ||
@@ -4795,25 +5162,15 @@ void Renderer::Impl::MirrorStencilClear() {
       !rex::graphics::ShaderInterpreter::CanInterpretShader(*st.vs)) {
     return;
   }
-  for (const RenderTarget* color_rt : st.targets.color) {
-    if (color_rt) return;
-  }
-  if (clear_z && (!depth.z_write_enable ||
-                  depth.zfunc != xenos::CompareFunction::kAlways ||
-                  st.bias_constant != 0.0f || st.bias_slope != 0.0f)) {
-    return;
-  }
   const auto ref = r.Get<reg::RB_STENCILREFMASK>();
-  if (depth.stencil_enable) {
-    if (!HasStencil(source->format) ||
-        depth.stencilfunc != xenos::CompareFunction::kAlways ||
-        depth.stencilzpass != xenos::StencilOp::kReplace ||
-        ref.stencilwritemask != 0xFF) {
-      return;
-    }
-  }
+  // RectangleList is non-polygonal in this backend: both faces use the front
+  // stencil state, culling is disabled and polygon wireframe mode is ignored.
+  // Restrict this path to clearing to zero, also the initial value of newly
+  // allocated depth targets. Nonzero alias contents need general transfers.
+  if (ref.stencilwritemask != 0xFF || ref.stencilref != 0) return;
   const uint32_t guest_msaa = source->key.guest_msaa;
   if (guest_msaa > 2) return;
+  // Require the fully enabled mask rather than infer partial sample coverage.
   if ((r[rex::graphics::XE_GPU_REG_PA_SC_AA_MASK] & 0xFFFFu) != 0xFFFFu) return;
 
   auto layout_of = [](const RenderTarget& rt) {
@@ -4825,7 +5182,7 @@ void Renderer::Impl::MirrorStencilClear() {
   for (const auto& entry : render_targets) {
     const RenderTarget& target = *entry.second;
     StencilClearRect mapped;
-    if (&target != source && target.key.is_depth &&
+    if (&target != source && target.key.is_depth && HasStencil(target.format) &&
         MapStencilClearRectangle(source_layout, layout_of(target),
                                  {0, 0, int32_t(source->width), int32_t(source->height)}, mapped)) {
       has_alias = true;
@@ -4835,19 +5192,14 @@ void Renderer::Impl::MirrorStencilClear() {
   if (!has_alias) return;
 
   StencilClearRect rect{};
-  float constant_depth = 0.0f;
-  if (!GetFastClearRectangle(rect, false, 0, -1.0f, clear_z ? &constant_depth : nullptr)) return;
+  if (!GetFastClearRectangle(rect, false)) return;
 
   bool started = false;
   for (const auto& entry : render_targets) {
     RenderTarget& target = *entry.second;
     StencilClearRect mapped;
-    if (&target == source || !target.key.is_depth ||
+    if (&target == source || !target.key.is_depth || !HasStencil(target.format) ||
         !MapStencilClearRectangle(source_layout, layout_of(target), rect, mapped)) continue;
-    VkImageAspectFlags aspect_mask = 0;
-    if (clear_z) aspect_mask |= VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (clear_s && HasStencil(target.format)) aspect_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    if (!aspect_mask) continue;
     if (!started) {
       DrainRecorder();
       EndPass();
@@ -4857,12 +5209,7 @@ void Renderer::Impl::MirrorStencilClear() {
     clear_targets.depth = &target;
     if (!BeginPass(clear_targets)) continue;
     VkClearAttachment attachment{};
-    attachment.aspectMask = aspect_mask;
-    attachment.clearValue.depthStencil.depth =
-        xenos::DepthRenderTargetFormat(target.key.format) ==
-                xenos::DepthRenderTargetFormat::kD24FS8
-            ? (constant_depth * 0.5f)
-            : constant_depth;
+    attachment.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
     attachment.clearValue.depthStencil.stencil = ref.stencilref;
     VkClearRect clear{};
     clear.rect.offset = {mapped.x0, mapped.y0};
@@ -4876,18 +5223,24 @@ void Renderer::Impl::MirrorStencilClear() {
           guest_msaa, target.key.base_tiles, target.key.pitch, target.key.guest_msaa,
           target.key.format, ref.stencilref};
       if (trace_stencil_clear_aliases.insert(key).second) {
-        REXLOG_INFO("[native][trace] mirrored depth/stencil clear base={} pitch={} guest_samples={} "
+        REXLOG_INFO("[native][trace] mirrored stencil clear base={} pitch={} guest_samples={} "
                     "rect=({},{})-({},{}) -> base={} pitch={} guest_samples={} "
-                    "rect=({},{})-({},{}) depth={} stencil={}",
+                    "rect=({},{})-({},{}) stencil={}",
                     source->key.base_tiles, source->key.pitch, 1u << guest_msaa,
                     rect.x0, rect.y0, rect.x1, rect.y1, target.key.base_tiles,
                     target.key.pitch, 1u << target.key.guest_msaa,
-                    mapped.x0, mapped.y0, mapped.x1, mapped.y1, constant_depth, ref.stencilref);
+                    mapped.x0, mapped.y0, mapped.x1, mapped.y1, ref.stencilref);
       }
     }
   }
 }
 
+// D3D9 also clears RGBA8 EDRAM by binding that same memory as D24S8 and drawing
+// a constant depth/stencil rectangle. A separate native color image must
+// observe that write before the next color pass / resolve. Mirror the existing
+// all-zero case and one verified Xenos fast-clear word (D24=0xFF0000, S8=0),
+// whose RGBA8 alias is opaque black. Other nonzero values still require a
+// general bit-exact alias transfer.
 void Renderer::Impl::MirrorZeroDepthColorClear() {
   const DrawSetup& st = setup;
   RenderTarget* source = st.targets.depth;
@@ -4972,9 +5325,27 @@ void Renderer::Impl::MirrorZeroDepthColorClear() {
     dfn().vkCmdClearAttachments(cmd(), 1, &attachment, 1, &clear);
     EndPass();
     target.last_used_frame = frame;
+    if (REXCVAR_GET(nx_native_trace_output) && trace_depth_color_clears.size() < 16) {
+      const std::array<uint32_t, 9> key = {source->key.base_tiles, source->key.pitch,
+          source->key.guest_msaa, target.key.format, uint32_t(mapped.x0), uint32_t(mapped.y0),
+          uint32_t(mapped.x1), uint32_t(mapped.y1),
+          opaque_black_depth_clear ? kOpaqueBlackDepth24 : 0u};
+      if (trace_depth_color_clears.insert(key).second) {
+        REXLOG_INFO("[native][trace] mirrored constant depth/color clear base={} pitch={} "
+                    "guest_samples={} rect=({},{})-({},{}) color_format={} depth24={:#08x}",
+                    source->key.base_tiles, source->key.pitch, 1u << source->key.guest_msaa,
+                    mapped.x0, mapped.y0, mapped.x1, mapped.y1, target.key.format,
+                    key.back());
+      }
+    }
   }
 }
 
+// Some games clear a color EDRAM alias by drawing an RGBA8 rectangle with a
+// pixel shader whose inputs produce exact zero. When the same EDRAM range is
+// also represented by a differently sampled host image, that draw cannot
+// update both images. Mirror only after interpreting the vertex and pixel
+// shaders for this draw proves the complete color output is zero.
 void Renderer::Impl::MirrorZeroColorAliasClear() {
   const DrawSetup& st = setup;
   const RegisterFile& r = *regs;
@@ -4984,7 +5355,8 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
   const auto program = r.Get<reg::SQ_PROGRAM_CNTL>();
   const auto color_control = r.Get<reg::RB_COLORCONTROL>();
 
-  if (!source || source->key.is_depth || !st.ps || !st.vs ||
+  if (!source || source->key.is_depth ||
+      source->key.format != kColorAliasClearFormatRgba8 || !st.ps || !st.vs ||
       st.primitive_polygonal ||
       st.ps->type() != xenos::ShaderType::kPixel ||
       st.ps->writes_color_targets() != 0b0001 || st.ps->kills_pixels() ||
@@ -5051,6 +5423,8 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
         {0, 0, int32_t(source->width), int32_t(source->height)}, mapped);
   };
 
+  // Avoid shader interpretation for the common case where this target has no
+  // differently sampled color alias.
   bool has_alias = false;
   for (const auto& entry : render_targets) {
     if (is_color_alias(*entry.second)) {
@@ -5061,11 +5435,7 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
   if (!has_alias) return;
 
   StencilClearRect rect{};
-  float constant_interpolators[xenos::kMaxInterpolators][4] = {};
-  if (!GetFastClearRectangle(rect, false, required_interpolators, -1.0f, nullptr,
-                             constant_interpolators)) {
-    return;
-  }
+  if (!GetFastClearRectangle(rect, false, required_interpolators)) return;
 
   class ColorSink final : public rex::graphics::ShaderInterpreter::ExportSink {
    public:
@@ -5085,26 +5455,11 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
   pixel_interpreter.SetExportSink(&color_sink);
   std::fill_n(pixel_interpreter.temp_registers(), xenos::kMaxShaderTempRegisters * 4,
               0.0f);
-  for (uint32_t interp = 0; interp < xenos::kMaxInterpolators; ++interp) {
-    if (required_interpolators & (1u << interp)) {
-      std::memcpy(pixel_interpreter.temp_registers() + interp * 4,
-                  constant_interpolators[interp], sizeof(float) * 4);
-    }
-  }
   pixel_interpreter.Execute();
   if (color_sink.written != 0xFu) return;
   for (float component : color_sink.color) {
-    if (!std::isfinite(component)) return;
+    if (component != 0.0f) return;
   }
-  const float exp_bias = std::ldexp(
-      1.0f,
-      r.Get<reg::RB_COLOR_INFO>(reg::RB_COLOR_INFO::rt_register_indices[0]).color_exp_bias);
-  const VkClearColorValue clear_color = {{
-      color_sink.color[0] * exp_bias,
-      color_sink.color[1] * exp_bias,
-      color_sink.color[2] * exp_bias,
-      color_sink.color[3] * exp_bias,
-  }};
 
   bool started = false;
   for (const auto& entry : render_targets) {
@@ -5126,7 +5481,7 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
     VkClearAttachment attachment{};
     attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     attachment.colorAttachment = 0;
-    attachment.clearValue.color = clear_color;
+    attachment.clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
     VkClearRect clear{};
     clear.rect.offset = {mapped.x0, mapped.y0};
     clear.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
@@ -5143,7 +5498,7 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
           uint32_t(mapped.x0), uint32_t(mapped.y0), uint32_t(mapped.x1),
           uint32_t(mapped.y1)};
       if (trace_zero_color_alias_clears.insert(key).second) {
-        REXLOG_INFO("[native][trace] mirrored color alias clear base={} pitch={} "
+        REXLOG_INFO("[native][trace] mirrored zero-color alias clear base={} pitch={} "
                     "guest_samples={} rect=({},{})-({},{}) -> base={} pitch={} "
                     "guest_samples={} rect=({},{})-({},{})",
                     source->key.base_tiles, source->key.pitch,
@@ -5230,7 +5585,6 @@ void Renderer::Impl::Resolve() {
   }
   RenderTarget* source = GetRenderTarget(source_key, uint32_t(y1));
   if (!source) return;
-  source->last_draw_guest_msaa = uint32_t(surface_info.msaa_samples);
   c = cmd();
   uint32_t width = uint32_t(x1 - x0);
   uint32_t height = std::min(uint32_t(y1 - y0), source->height - std::min(uint32_t(y0), source->height));
@@ -5239,6 +5593,18 @@ void Renderer::Impl::Resolve() {
   // Copy.
   uint32_t dest_base = r[rex::graphics::XE_GPU_REG_RB_COPY_DEST_BASE];
   auto dest_info = r.Get<reg::RB_COPY_DEST_INFO>();
+  if (traza_activa) {
+    const uint32_t src = uint32_t(copy_control.copy_src_select);
+    const uint32_t src_info = src < 4 ? r[reg::RB_COLOR_INFO::rt_register_indices[src]]
+                                      : r[rex::graphics::XE_GPU_REG_RB_DEPTH_INFO];
+    REXLOG_INFO("[traza] {:4} RESOLVE src {} fmt {} base {} -> {:08X} fmt {} exp_bias {} {}x{} at {},{} "
+                "cmd {} clear c{} d{} endian {}",
+                traza_n++, src, (src_info >> 16) & 0xF, src_info & 0xFFF, dest_base,
+                uint32_t(dest_info.copy_dest_format), int32_t(dest_info.copy_dest_exp_bias), width,
+                height, x0, y0, uint32_t(copy_control.copy_command),
+                uint32_t(copy_control.color_clear_enable), uint32_t(copy_control.depth_clear_enable),
+                uint32_t(dest_info.copy_dest_endian));
+  }
   bool copy = dest_base != 0 &&
               (copy_control.copy_command == xenos::CopyCommand::kRaw ||
                copy_control.copy_command == xenos::CopyCommand::kConvert);
@@ -5278,6 +5644,22 @@ void Renderer::Impl::Resolve() {
     uint32_t dest_height = uint32_t(y0) + height;
     dest_width = std::min(dest_width, 8192u);
     dest_height = std::min(dest_height, 8192u);
+    if (REXCVAR_GET(nx_native_debug) & 8) {
+      frame_resolve_sequence.push_back(
+          fmt::format("{:08X}:{}x{}:{}{}>{}", dest_base & 0x1FFFFFFF, width, height,
+                      is_depth ? "D" : "C", uint32_t(source_key.format),
+                      uint32_t(dest_info.copy_dest_format)));
+      static std::set<std::array<uint32_t, 8>> seen_resolves;
+      const std::array<uint32_t, 8> rk = {dest_base & 0x1FFFFFFF, width, height,
+                                           uint32_t(is_depth), uint32_t(source_key.format),
+                                           uint32_t(msaa), uint32_t(dest_info.copy_dest_format),
+                                           uint32_t(y0)};
+      if (seen_resolves.size() < 400 && seen_resolves.insert(rk).second) {
+        REXLOG_INFO("[native][res] dest={:08X} {}x{} y0={} depth={} src_fmt={} msaa={} dest_fmt={}",
+                    rk[0], width, height, y0, is_depth, uint32_t(source_key.format), msaa,
+                    uint32_t(dest_info.copy_dest_format));
+      }
+    }
     auto& trace_states = is_depth ? trace_depth_resolve_states : trace_resolve_states;
     const size_t trace_limit = is_depth ? 8 : 24;
     if (REXCVAR_GET(nx_native_trace_output) && trace_states.size() < trace_limit) {
@@ -5378,11 +5760,15 @@ void Renderer::Impl::Resolve() {
       tiled_root_address = resolve_address - *tile_offset;
     }
     if (!is_depth) {
+      // FH2 draws the world in 3 predicated tiles whose HDR color
+      // (2_10_10_10_FLOAT host R16G16B16A16F, 32-bit guest pixels) resolves into
+      // one 1280x720 image; compose those like the 8888 ones.
       tiled_format_supported =
           ((uint32_t(dest_info.copy_dest_format) == uint32_t(xenos::ColorFormat::k_8_8_8_8) &&
             source->format == VK_FORMAT_R8G8B8A8_UNORM) ||
            (uint32_t(dest_info.copy_dest_format) == uint32_t(xenos::ColorFormat::k_2_10_10_10) &&
-            source->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) &&
+            (source->format == VK_FORMAT_R16G16B16A16_SFLOAT ||
+             source->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32))) &&
           !dest_info.copy_dest_array && !dest_info.copy_dest_slice;
 
       // Keep a composite only for the root layout we know how to maintain.
@@ -5486,28 +5872,25 @@ void Renderer::Impl::Resolve() {
                                                 dest_width, dest_height};
       }
     }
-    // Like the guest resolve: the exponent bias scales color, and a float
-    // render target copied to a fixed-point format is clamped to [0, 1]
-    // (FH2's and Halo's HDR luminance chain resolves 7e3 into 2_10_10_10; unclamped
-    // values made its auto exposure blow out into white or darken).
-    bool convert_clamp = false;
+    // Like the guest resolve (and Gabrick75's FH2 native renderer): the
+    // exponent bias scales color, and the 7e3 render targets (2_10_10_10_FLOAT
+    // and its AS_16_16_16_16 view) are clamped to their console maximum,
+    // 31.875: the host float16 keeps more, and the sun and the sky then
+    // lowered the auto exposure. A [0, 1] clamp was wrong (it is a raw copy
+    // of the 7e3 bits on the console, not a conversion to unorm).
+    float convert_max = 0.0f;
     float convert_scale = 1.0f;
     if (!is_depth && REXCVAR_GET(nx_resolve_convert)) {
       const bool float_source = source->format == VK_FORMAT_R16G16B16A16_SFLOAT ||
                                 source->format == VK_FORMAT_R16G16_SFLOAT ||
                                 source->format == VK_FORMAT_R32_SFLOAT ||
                                 source->format == VK_FORMAT_R32G32_SFLOAT;
-      const uint32_t cf = uint32_t(dest_info.copy_dest_format);
-      const bool fixed_dest = cf == uint32_t(xenos::ColorFormat::k_8_8_8_8) ||
-                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10) ||
-                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_A) ||
-                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_AS_16_16_16_16) ||
-                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10_AS_16_16_16_16);
-      convert_clamp = float_source && fixed_dest;
+      const uint32_t rt_format = source->key.format;
+      if (float_source && (rt_format == 3 || rt_format == 12)) convert_max = 31.875f;
       const int32_t exp_bias = int32_t(dest_info.copy_dest_exp_bias);
       if (exp_bias) convert_scale = std::ldexp(1.0f, exp_bias);
     }
-    const bool convert_needed = convert_clamp || convert_scale != 1.0f;
+    const bool convert_needed = convert_max > 0.0f || convert_scale != 1.0f;
     if (dest) {
       if (is_depth) {
         // Depth cannot be copied into a color image directly. It goes through
@@ -5763,7 +6146,8 @@ void Renderer::Impl::Resolve() {
           uint32_t params[5] = {count, kGroupsPerRow * 64, uint32_t(stencil_offset / 4),
                                 uint32_t(packed_offset / 4),
                                 (source->format == VK_FORMAT_D24_UNORM_S8_UINT ? 1u : 0u) |
-                                    (has_stencil ? 2u : 0u)};
+                                    (has_stencil ? 2u : 0u) |
+                                    ((REXCVAR_GET(nx_depth_words) & 3u) << 2)};
           dfn().vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_COMPUTE, depth_convert_pipeline);
           dfn().vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_COMPUTE, depth_convert_layout,
                                         0, 1, &depth_convert_set, 0, nullptr);
@@ -5783,7 +6167,7 @@ void Renderer::Impl::Resolve() {
                                        &out);
           // The words only for unorm depth: float24 would need its own
           // encoding, and the game samples those buffers (shadow maps) as depth.
-          if (unorm_guest) {
+          if (unorm_guest || REXCVAR_GET(nx_depth_words) != 0) {
             ResolveDestination* words = shared_write
                 ? textures.GetSharedResolveDestination(
                     resolve_address | TextureCache::kDepthWordsTag,
@@ -5812,7 +6196,7 @@ void Renderer::Impl::Resolve() {
       } else if (convert_needed && source->samples == VK_SAMPLE_COUNT_1_BIT &&
                  textures.StorageCapable(dest->format) &&
                  ComputeColorCopy(c, source->view, dest->view, x0, y0, dest_x, dest_y, width,
-                                  height, convert_scale, convert_clamp)) {
+                                  height, convert_scale, convert_max)) {
         // Converted like the guest resolve (exp bias, fixed-point clamp).
       } else if (msaa) {
         if (precise_resolve_barriers) barrier_to_transfer();
@@ -5826,7 +6210,7 @@ void Renderer::Impl::Resolve() {
                                 VK_IMAGE_LAYOUT_GENERAL, 1, &resolve);
         if (convert_needed && textures.StorageCapable(dest->format)) {
           ComputeColorCopy(c, dest->view, dest->view, dest_x, dest_y, dest_x, dest_y, width,
-                           height, convert_scale, convert_clamp);
+                           height, convert_scale, convert_max);
         }
       } else if (source->samples == VK_SAMPLE_COUNT_1_BIT && textures.StorageCapable(dest->format) &&
                  ComputeColorCopy(c, source->view, dest->view, x0, y0, dest_x, dest_y, width, height)) {
@@ -5844,6 +6228,24 @@ void Renderer::Impl::Resolve() {
       }
       textures.CopyToSized(*dest, c,
           resolve_layout::Rect{uint32_t(dest_x), uint32_t(dest_y), width, height});
+      ProbeResolve(c, resolve_address, *dest, dest_x, dest_y, width, height, is_depth);
+      if (!is_depth && x0 == 0 && y0 == 0 && REXCVAR_GET(nx_leer_resueltas) &&
+          uint64_t(width) * height <= REXCVAR_GET(nx_leer_resueltas) &&
+          uint32_t(dest_info.copy_dest_format) == uint32_t(xenos::ColorFormat::k_8_8_8_8) &&
+          dest->format == VK_FORMAT_R8G8B8A8_UNORM) {
+        uint64_t& copies = readback_counts[resolve_address];
+        if (copies++ % std::max(1u, REXCVAR_GET(nx_leer_cada)) == 0 &&
+            RecordReadback(c, *dest, dest_x, dest_y, width, height)) {
+          pending_readback.active = true;
+          pending_readback.base = resolve_address;
+          pending_readback.pitch = tiled_full_width;
+          pending_readback.guest_height = tiled_full_height;
+          pending_readback.width = width;
+          pending_readback.height = height;
+          pending_readback.endian = uint32_t(dest_info.copy_dest_endian);
+          pending_readback.swap = uint32_t(dest_info.copy_dest_swap);
+        }
+      }
       // The shared-resource mode never creates segment resolve images or
       // invokes the legacy composition stage, including for unsupported writes.
       if (!shared_mode) {
@@ -5902,9 +6304,6 @@ void Renderer::Impl::Resolve() {
       key.guest_msaa = uint32_t(surface_info.msaa_samples);
       key.is_depth = 1;
       depth_target = GetRenderTarget(key, uint32_t(y1));
-      if (depth_target) {
-        depth_target->last_draw_guest_msaa = uint32_t(surface_info.msaa_samples);
-      }
       clear_targets.depth = depth_target;
     }
     if (clear_color) {
@@ -6029,79 +6428,6 @@ void Renderer::Impl::Resolve() {
         }
         EndPass();
       }
-      const StencilClearRect resolve_clear_rect{x0, y0, x1, y1};
-      if (depth_target) {
-        const StencilClearLayout depth_src_layout{
-            depth_target->key.base_tiles, depth_target->key.pitch, depth_target->key.guest_msaa,
-            depth_target->key.format, depth_target->width, depth_target->height};
-        const uint32_t clear_reg = r[rex::graphics::XE_GPU_REG_RB_DEPTH_CLEAR];
-        const uint32_t depth24 = clear_reg >> 8;
-        for (const auto& entry : render_targets) {
-          RenderTarget& alias = *entry.second;
-          if (&alias == depth_target || &alias == color_target) continue;
-          StencilClearRect mapped{};
-          if (alias.key.is_depth) {
-            const StencilClearLayout alias_layout{
-                alias.key.base_tiles, alias.key.pitch, alias.key.guest_msaa,
-                alias.key.format, alias.width, alias.height};
-            if (!MapStencilClearRectangle(depth_src_layout, alias_layout, resolve_clear_rect, mapped)) {
-              continue;
-            }
-            PassTargets alias_targets;
-            alias_targets.depth = &alias;
-            if (!BeginPass(alias_targets)) continue;
-            VkClearAttachment a{};
-            a.aspectMask = HasStencil(alias.format)
-                               ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
-                               : VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT);
-            a.clearValue.depthStencil.depth =
-                xenos::DepthRenderTargetFormat(alias.key.format) ==
-                        xenos::DepthRenderTargetFormat::kD24FS8
-                    ? xenos::Float20e4To32(depth24) * 0.5f
-                    : xenos::UNorm24To32(depth24);
-            a.clearValue.depthStencil.stencil = clear_reg & 0xFF;
-            VkClearRect cr{};
-            cr.rect.offset = {mapped.x0, mapped.y0};
-            cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
-            cr.layerCount = 1;
-            dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
-            EndPass();
-            alias.last_used_frame = frame;
-          }
-        }
-      }
-      if (color_target) {
-        const StencilClearLayout color_src_layout{
-            color_target->key.base_tiles, color_target->key.pitch, color_target->last_draw_guest_msaa,
-            color_target->key.format, color_target->width, color_target->height};
-        const VkClearValue& color_cv = attachments[depth_target ? 1 : 0].clearValue;
-        for (const auto& entry : render_targets) {
-          RenderTarget& alias = *entry.second;
-          if (&alias == color_target || alias.key.is_depth) continue;
-          const StencilClearLayout alias_layout{
-              alias.key.base_tiles, alias.key.pitch, alias.last_draw_guest_msaa,
-              alias.key.format, alias.width, alias.height};
-          StencilClearRect mapped{};
-          if (!MapZeroColorAliasClearRectangle(color_src_layout, alias_layout, resolve_clear_rect,
-                                               mapped)) {
-            continue;
-          }
-          PassTargets alias_targets;
-          alias_targets.color[0] = &alias;
-          if (!BeginPass(alias_targets)) continue;
-          VkClearAttachment a{};
-          a.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-          a.colorAttachment = 0;
-          a.clearValue = color_cv;
-          VkClearRect cr{};
-          cr.rect.offset = {mapped.x0, mapped.y0};
-          cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
-          cr.layerCount = 1;
-          dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
-          EndPass();
-          alias.last_used_frame = frame;
-        }
-      }
     }
   }
 
@@ -6109,6 +6435,7 @@ void Renderer::Impl::Resolve() {
   // the next rendering or present, so a run of resolves shares one (each
   // barrier is a full wait for idle on this GPU).
   resolve_barrier_pending = true;
+  if (pending_readback.active) FinishReadback();
 }
 
 void Renderer::Impl::FlushResolveBarrier() {
@@ -6153,6 +6480,7 @@ void Renderer::Impl::Swap(rex::ui::Presenter* presenter, uint32_t frontbuffer, u
                           uint32_t height) {
   const uint32_t packet_width = width;
   const uint32_t packet_height = height;
+  TrazaSwap(frontbuffer);
   // VdSwap describes the frontbuffer in texture fetch constant 0, swizzle
   // included; the SDK presents from it too (RequestSwapTexture). Without the
   // swizzle, red and blue come out swapped.
@@ -6167,6 +6495,26 @@ void Renderer::Impl::Swap(rex::ui::Presenter* presenter, uint32_t frontbuffer, u
     }
     address = fetch.base_address << 12;
     guest_swizzle = fetch.swizzle;
+  }
+  if (REXCVAR_GET(nx_native_debug) & 8) {
+    static uint32_t swap_count = 0, logged_sequences = 0;
+    ++swap_count;
+    if (swap_count > 300 && (swap_count % 150) == 0 && logged_sequences < 8) {
+      ++logged_sequences;
+      std::string joined;
+      for (const auto& item : frame_resolve_sequence) { joined += item; joined += ' '; }
+      REXLOG_INFO("[native][seq] swap {} frontbuffer={:08X} fetch={}x{} resolves={}: {}",
+                  swap_count, address, fetch_width, fetch_height, frame_resolve_sequence.size(),
+                  joined);
+    }
+    frame_resolve_sequence.clear();
+  }
+  {
+    static const uint32_t override_address = [] {
+      const std::string text = REXCVAR_GET(nx_native_debug_present);
+      return text.empty() ? 0u : uint32_t(std::strtoul(text.c_str(), nullptr, 16));
+    }();
+    if (override_address) address = override_address;
   }
   uint32_t source_width = 0, source_height = 0;
   ResolvePresentSource present_source;
@@ -6216,10 +6564,81 @@ void Renderer::Impl::Swap(rex::ui::Presenter* presenter, uint32_t frontbuffer, u
       }
     }
     bool fused_presented = false;
+#if 0  // FH2: el presentador del SDK de Forza no tiene RefreshGuestOutputWithGammaTable
     if (REXCVAR_GET(nx_native_fused_gamma)) {
       auto* vulkan_presenter = static_cast<rex::ui::vulkan::VulkanPresenter*>(presenter);
-      fused_presented = false; /* gamma table bypassed */
+      fused_presented = vulkan_presenter->RefreshGuestOutputWithGammaTable(
+          width, height, display_width, display_height, present_source.format,
+          present_source.components,
+          [&](rex::ui::vulkan::VulkanPresenter::VulkanGuestOutputRefreshContext& context) {
+            BeginRecording();
+            EndPass();
+            FlushResolveBarrier();
+            const uint32_t slot = uint32_t(submission_number % kSubmissionSlots);
+            const VkDeviceSize ramp_offset = sizeof(gamma_ramp) * slot;
+            std::memcpy(ramp_mapping + ramp_offset, gamma_ramp, sizeof(gamma_ramp));
+            if (!ramp_memory_coherent) {
+              rex::ui::vulkan::util::FlushMappedMemoryRange(
+                  device, ramp_memory, ramp_memory_type_index, ramp_offset, ramp_allocation_size,
+                  sizeof(gamma_ramp));
+            }
+            VkCommandBuffer c = cmd();
+            // Keep a stable, uncorrected mailbox snapshot. Its view carries the
+            // same guest/host swizzle as source_view (image copies ignore views).
+            VkImageMemoryBarrier image_barrier = {};
+            image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image_barrier.srcAccessMask = context.image_ever_written_previously()
+                                             ? VK_ACCESS_SHADER_READ_BIT : 0;
+            image_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_barrier.image = context.image();
+            image_barrier.subresourceRange = rex::ui::vulkan::util::InitializeSubresourceRange();
+            VkBufferMemoryBarrier ramp_barrier = {};
+            ramp_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            ramp_barrier.srcAccessMask = image_barrier.srcAccessMask;
+            ramp_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ramp_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ramp_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ramp_barrier.buffer = context.gamma_table_buffer();
+            ramp_barrier.size = VK_WHOLE_SIZE;
+            dfn().vkCmdPipelineBarrier(
+                c, context.image_ever_written_previously()
+                       ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &ramp_barrier, 1, &image_barrier);
+            VkImageCopy copy = {};
+            copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copy.srcSubresource.layerCount = 1;
+            copy.dstSubresource = copy.srcSubresource;
+            copy.extent = {width, height, 1};
+            dfn().vkCmdCopyImage(c, present_source.image, VK_IMAGE_LAYOUT_GENERAL,
+                                  context.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            VkBufferCopy ramp_copy = {ramp_offset, 0, sizeof(gamma_ramp)};
+            dfn().vkCmdCopyBuffer(c, ramp_buffer, context.gamma_table_buffer(), 1, &ramp_copy);
+            image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_barrier.newLayout =
+                rex::ui::vulkan::VulkanPresenter::kGuestOutputInternalLayout;
+            ramp_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ramp_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            // Complete the source read before a later resolve overwrites it.
+            VkMemoryBarrier after_copy = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+                                            VK_ACCESS_TRANSFER_READ_BIT,
+                                            VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+            dfn().vkCmdPipelineBarrier(
+                c, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0, 1, &after_copy, 1, &ramp_barrier, 1, &image_barrier);
+            Submit();
+            context.SetIs8bpc(true);
+            return true;
+          });
     }
+#endif
     static int logged_fused_present = -1;
     if (logged_fused_present != int(fused_presented)) {
       logged_fused_present = int(fused_presented);

@@ -11,6 +11,7 @@
 #include "native_hash.h"
 #include "native_resolve_layout.h"
 
+#include <set>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -44,6 +45,7 @@ extern "C" {
 #include <rex/ui/vulkan/util.h>
 
 REXCVAR_DECLARE(bool, nx_native_precise_resolve_barriers);
+REXCVAR_DECLARE(uint32_t, nx_native_debug);
 
 namespace reach_nx::native {
 
@@ -976,6 +978,18 @@ struct TextureCache::Impl {
   VkImage null_images[3] = {};
   VkDeviceMemory null_memory[3] = {};
   VkImageView null_views[3] = {};  // 2D array, cube, 3D
+  // Small 32bpp 3D textures (FH2's 16x16x16 color grading LUT in the final
+  // pass of the race: without it the whole race is drawn black).
+  struct Volume {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    uint32_t width = 0, height = 0, depth = 0;
+    uint64_t content_hash = 0;
+    uint64_t checked_frame = UINT64_MAX;
+    bool uploaded = false;
+    std::unordered_map<uint32_t, VkImageView> views;
+  };
+  std::unordered_map<uint64_t, Volume> volumes;
 
   // Destroyed once the frame that last used them is complete.
   struct Retired {
@@ -2204,8 +2218,9 @@ ResolveDestination* TextureCache::GetSharedResolveDestination(
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_R8G8B8A8_SRGB:
     case VK_FORMAT_R8G8B8A8_UINT:
-    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
     case VK_FORMAT_R32_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:  // guest k_2_10_10_10 pixels are 4 bytes
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
       bytes_per_pixel_log2 = 2;
       break;
     default:
@@ -2663,6 +2678,21 @@ VkImageView TextureCache::GetViewUncached(const xenos::xe_gpu_texture_fetch_t& f
       }
     }
 
+    if ((REXCVAR_GET(nx_native_debug) & 8) &&
+        (resolved || (base_address >= 0x12000000u && base_address < 0x14200000u))) {
+      static std::set<std::array<uint32_t, 10>> logged;
+      const std::array<uint32_t, 10> key = {
+          base_address, width_minus_1 + 1, height_minus_1 + 1, uint32_t(fetch.format),
+          resolved ? 1u : 0u, resolved ? resolved->width : 0u, resolved ? resolved->height : 0u,
+          resolved ? uint32_t(resolved->format) : 0u, shared ? 1u : 0u, origin_y};
+      if (logged.size() < 400 && logged.insert(key).second) {
+        REXLOG_INFO("[native][tex] fetch addr={:08X} {}x{} guest_fmt={} resolved={} dest={}x{} "
+                    "host_fmt={} shared={} origin_y={} sized_ok={}",
+                    base_address, width_minus_1 + 1, height_minus_1 + 1, uint32_t(fetch.format),
+                    resolved != nullptr, key[5], key[6], key[7], shared, origin_y,
+                    resolved ? resolved->sized.size() : 0u);
+      }
+    }
     if (resolved) {
       ResolveDestination& dest = *resolved;
       dest.last_used_frame = im.frame;
@@ -2896,6 +2926,144 @@ VkImageView TextureCache::GetViewUncached(const xenos::xe_gpu_texture_fetch_t& f
   // 1D and 3D textures are not handled. 1D ones were tried as 2D textures a
   // texel tall; the first run with them had Free Skate's world geometry
   // stretched and untextured, which it never was with them drawn empty.
+  if (fetch.dimension == xenos::DataDimension::k3D &&
+      dimension == xenos::FetchOpDimension::k3DOrStacked && base_page &&
+      host_format.conversion == Conversion::kCopy && !host_format.compressed &&
+      host_format.unorm == VK_FORMAT_R8G8B8A8_UNORM && width_minus_1 < 256 &&
+      height_minus_1 < 256 && depth_minus_1 < 256) {
+    // A small 32bpp volume (a color grading LUT): untiled and uploaded here,
+    // re-uploaded when its guest memory changes (checked once a frame).
+    const uint32_t w = width_minus_1 + 1, h = height_minus_1 + 1, z_count = depth_minus_1 + 1;
+    texture_util::TextureGuestLayout layout = texture_util::GetGuestTextureLayout(
+        fetch.dimension, fetch.pitch, w, h, z_count, fetch.tiled, format, fetch.packed_mips, true,
+        0);
+    const uint32_t base_address = base_page << 12;
+    const uint32_t extent = layout.base.level_data_extent_bytes;
+    const uint32_t row_pitch = layout.base.row_pitch_bytes;
+    const uint32_t slice_rows = layout.base.z_slice_stride_block_rows;
+    if (extent && row_pitch && slice_rows && uint64_t(base_address) + extent <= 0x20000000u) {
+      const uint8_t* guest = im.memory->TranslatePhysical<const uint8_t*>(base_address);
+      struct VolumeKey {
+        uint32_t base_page, width, height, depth, pitch, tiled, endianness, format;
+      } vkey = {base_page, w, h, z_count, fetch.pitch, uint32_t(fetch.tiled),
+                uint32_t(fetch.endianness), uint32_t(format)};
+      const uint64_t volume_key = XXH3_64bits(&vkey, sizeof(vkey));
+      Impl::Volume& vol = im.volumes[volume_key];
+      bool ok = true;
+      if (!vol.image) {
+        VkImageCreateInfo info = {};
+        info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        info.imageType = VK_IMAGE_TYPE_3D;
+        info.flags = host_format.snorm != VK_FORMAT_UNDEFINED ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+        info.format = VK_FORMAT_R8G8B8A8_UNORM;
+        info.extent = {w, h, z_count};
+        info.mipLevels = 1;
+        info.arrayLayers = 1;
+        info.samples = VK_SAMPLE_COUNT_1_BIT;
+        info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ok = rex::ui::vulkan::util::CreateDedicatedAllocationImage(
+            im.device, info, rex::ui::vulkan::util::MemoryPurpose::kDeviceLocal, vol.image,
+            vol.memory);
+        if (!ok) {
+          vol.image = VK_NULL_HANDLE;
+        } else {
+          vol.width = w;
+          vol.height = h;
+          vol.depth = z_count;
+          REXLOG_INFO("[native] 3D texture {:08X} {}x{}x{} format {} tiled {} (volume path)",
+                      base_address, w, h, z_count, uint32_t(format), uint32_t(fetch.tiled));
+        }
+      }
+      if (ok && vol.checked_frame != im.frame) {
+        vol.checked_frame = im.frame;
+        const uint64_t hash = XXH3_64bits(guest, extent);
+        if (!vol.uploaded || hash != vol.content_hash) {
+          const size_t bytes = size_t(w) * h * z_count * 4;
+          VkDeviceSize offset = 0;
+          uint8_t* staging = upload.allocate ? upload.allocate(bytes, 16, offset) : nullptr;
+          if (staging) {
+            const xenos::Endian endian = static_cast<xenos::Endian>(uint32_t(fetch.endianness));
+            uint8_t* out = staging;
+            for (uint32_t z = 0; z < z_count; ++z) {
+              for (uint32_t y = 0; y < h; ++y) {
+                for (uint32_t x = 0; x < w; ++x, out += 4) {
+                  uint64_t src;
+                  if (fetch.tiled) {
+                    src = uint32_t(texture_util::GetTiledOffset3D(
+                        int32_t(x), int32_t(y), int32_t(z), row_pitch >> 2, slice_rows, 2));
+                  } else {
+                    src = (uint64_t(z) * slice_rows + y) * row_pitch + uint64_t(x) * 4;
+                  }
+                  if (src + 4 > extent) {
+                    std::memset(out, 0, 4);
+                  } else {
+                    texture_conversion::CopySwapBlock(endian, out, guest + src, 4);
+                  }
+                }
+              }
+            }
+            VkImageMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcAccessMask = vol.uploaded ? VK_ACCESS_SHADER_READ_BIT : 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.oldLayout =
+                vol.uploaded ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = vol.image;
+            barrier.subresourceRange = rex::ui::vulkan::util::InitializeSubresourceRange();
+            dfn.vkCmdPipelineBarrier(upload.setup_commands,
+                                     vol.uploaded ? (VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+                                                  : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                     &barrier);
+            VkBufferImageCopy region = {};
+            region.bufferOffset = offset;
+            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.imageExtent = {w, h, z_count};
+            dfn.vkCmdCopyBufferToImage(upload.setup_commands, upload.buffer, vol.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            dfn.vkCmdPipelineBarrier(upload.setup_commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
+            vol.content_hash = hash;
+            vol.uploaded = true;
+            ++stats_.uploads;
+            stats_.upload_bytes += bytes;
+          }
+        }
+      }
+      if (ok && vol.uploaded) {
+        const uint32_t swizzle = GuestToHostSwizzle(fetch.swizzle, host_format.swizzle);
+        const bool use_signed = is_signed && host_format.snorm != VK_FORMAT_UNDEFINED;
+        const uint32_t view_key = (swizzle << 1) | uint32_t(use_signed);
+        auto found = vol.views.find(view_key);
+        if (found != vol.views.end()) return found->second;
+        VkImageViewCreateInfo view = {};
+        view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view.image = vol.image;
+        view.viewType = VK_IMAGE_VIEW_TYPE_3D;
+        view.format = use_signed ? host_format.snorm : host_format.unorm;
+        view.components = {ComponentSwizzle(swizzle, 0), ComponentSwizzle(swizzle, 1),
+                           ComponentSwizzle(swizzle, 2), ComponentSwizzle(swizzle, 3)};
+        view.subresourceRange = rex::ui::vulkan::util::InitializeSubresourceRange();
+        VkImageView result = VK_NULL_HANDLE;
+        if (dfn.vkCreateImageView(d, &view, nullptr, &result) == VK_SUCCESS) {
+          vol.views.emplace(view_key, result);
+          return result;
+        }
+      }
+    }
+  }
   if (host_format.conversion == Conversion::kUnsupported ||
       fetch.dimension == xenos::DataDimension::k3D ||
       fetch.dimension == xenos::DataDimension::k1D) {

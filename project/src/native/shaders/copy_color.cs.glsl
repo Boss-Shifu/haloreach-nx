@@ -20,10 +20,11 @@ layout(push_constant) uniform Params {
   ivec2 source_origin;
   ivec2 dest_origin;
   uvec2 size;
-  // Resolve format conversion: multiply by 2^exp_bias, and clamp to [0, 1]
-  // when a float render target is copied to a fixed-point guest format.
+  // Resolve format conversion: multiply by 2^exp_bias, and clamp to
+  // [0, maximum] when maximum > 0 (FH2: 7e3 render targets hold nothing above
+  // 31.875 on the console; the host float16 keeps more).
   float scale;
-  uint clamp01;
+  float maximum;
 };
 void main() {
   uvec2 p = gl_GlobalInvocationID.xy;
@@ -31,8 +32,8 @@ void main() {
     return;
   }
   vec4 v = texelFetch(source, source_origin + ivec2(p), 0) * scale;
-  if (clamp01 != 0u) {
-    v = clamp(v, vec4(0.0), vec4(1.0));
+  if (maximum > 0.0) {
+    v = clamp(v, vec4(0.0), vec4(maximum));
   }
   imageStore(dest, dest_origin + ivec2(p), v);
 }
