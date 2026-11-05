@@ -44,8 +44,8 @@ constexpr bool MapZeroColorAliasClearRectangle(const StencilClearLayout& source,
                                                const StencilClearRect& source_rect,
                                                StencilClearRect& destination_rect) {
   destination_rect = {};
-  if (source.format != kColorAliasClearFormatRgba8 ||
-      destination.format != kColorAliasClearFormatRgba8 ||
+  if ((source.format != 0 && source.format != 1) ||
+      (destination.format != 0 && destination.format != 1) ||
       source.guest_msaa == destination.guest_msaa || source.guest_msaa > 2 ||
       destination.guest_msaa > 2) {
     return false;

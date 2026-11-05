@@ -57,7 +57,7 @@ vulkan_allow_present_mode_immediate = true
 
 # Correccion de exposicion y luminancia HDR (FH2 NX v2 / Halo Reach)
 nx_resolve_convert = true
-nx_leer_resueltas = 4096
+nx_leer_resueltas = 0
 nx_leer_cada = 1
 nx_native_debug = 8
 nx_native_max_anisotropy = 2

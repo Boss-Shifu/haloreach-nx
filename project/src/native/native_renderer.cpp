@@ -128,7 +128,7 @@ REXCVAR_DEFINE_UINT32(nx_traza_cuadros, 2, "Halo Reach", "Diagnostic: frames tra
 // exposure (Gabrick75's FH2 native renderer: "4096 restores it"; without the
 // read-backs the race's exposure ends up black). These resolves are copied to
 // guest memory before the ring goes on, so the next fence already sees them.
-REXCVAR_DEFINE_UINT32(nx_leer_resueltas, 4096, "Halo Reach",
+REXCVAR_DEFINE_UINT32(nx_leer_resueltas, 0, "Halo Reach",
                       "8_8_8_8 color resolves of up to this many texels are also written to guest "
                       "memory, which the game reads for its auto exposure (0 = none)");
 REXCVAR_DEFINE_UINT32(nx_leer_cada, 1, "Halo Reach",
@@ -5356,7 +5356,7 @@ void Renderer::Impl::MirrorZeroColorAliasClear() {
   const auto color_control = r.Get<reg::RB_COLORCONTROL>();
 
   if (!source || source->key.is_depth ||
-      source->key.format != kColorAliasClearFormatRgba8 || !st.ps || !st.vs ||
+      (source->key.format != 0 && source->key.format != 1) || !st.ps || !st.vs ||
       st.primitive_polygonal ||
       st.ps->type() != xenos::ShaderType::kPixel ||
       st.ps->writes_color_targets() != 0b0001 || st.ps->kills_pixels() ||
@@ -5886,7 +5886,17 @@ void Renderer::Impl::Resolve() {
                                 source->format == VK_FORMAT_R32_SFLOAT ||
                                 source->format == VK_FORMAT_R32G32_SFLOAT;
       const uint32_t rt_format = source->key.format;
-      if (float_source && (rt_format == 3 || rt_format == 12)) convert_max = 31.875f;
+      const uint32_t cf = uint32_t(dest_info.copy_dest_format);
+      const bool fixed_dest = cf == uint32_t(xenos::ColorFormat::k_8_8_8_8) ||
+                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10) ||
+                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_A) ||
+                              cf == uint32_t(xenos::ColorFormat::k_8_8_8_8_AS_16_16_16_16) ||
+                              cf == uint32_t(xenos::ColorFormat::k_2_10_10_10_AS_16_16_16_16);
+      if (float_source && fixed_dest) {
+        convert_max = 1.0f;
+      } else if (float_source && (rt_format == 3 || rt_format == 12)) {
+        convert_max = 31.875f;
+      }
       const int32_t exp_bias = int32_t(dest_info.copy_dest_exp_bias);
       if (exp_bias) convert_scale = std::ldexp(1.0f, exp_bias);
     }
@@ -6427,6 +6437,79 @@ void Renderer::Impl::Resolve() {
           dfn().vkCmdClearAttachments(cmd(), count, attachments, 1, &rect);
         }
         EndPass();
+      }
+      const StencilClearRect resolve_clear_rect{x0, y0, x1, y1};
+      if (depth_target) {
+        const StencilClearLayout depth_src_layout{
+            depth_target->key.base_tiles, depth_target->key.pitch, depth_target->key.guest_msaa,
+            depth_target->key.format, depth_target->width, depth_target->height};
+        const uint32_t clear_reg = r[rex::graphics::XE_GPU_REG_RB_DEPTH_CLEAR];
+        const uint32_t depth24 = clear_reg >> 8;
+        for (const auto& entry : render_targets) {
+          RenderTarget& alias = *entry.second;
+          if (&alias == depth_target || &alias == color_target) continue;
+          StencilClearRect mapped{};
+          if (alias.key.is_depth) {
+            const StencilClearLayout alias_layout{
+                alias.key.base_tiles, alias.key.pitch, alias.key.guest_msaa,
+                alias.key.format, alias.width, alias.height};
+            if (!MapStencilClearRectangle(depth_src_layout, alias_layout, resolve_clear_rect, mapped)) {
+              continue;
+            }
+            PassTargets alias_targets;
+            alias_targets.depth = &alias;
+            if (!BeginPass(alias_targets)) continue;
+            VkClearAttachment a{};
+            a.aspectMask = HasStencil(alias.format)
+                               ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
+                               : VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT);
+            a.clearValue.depthStencil.depth =
+                xenos::DepthRenderTargetFormat(alias.key.format) ==
+                        xenos::DepthRenderTargetFormat::kD24FS8
+                    ? xenos::Float20e4To32(depth24) * 0.5f
+                    : xenos::UNorm24To32(depth24);
+            a.clearValue.depthStencil.stencil = clear_reg & 0xFF;
+            VkClearRect cr{};
+            cr.rect.offset = {mapped.x0, mapped.y0};
+            cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
+            cr.layerCount = 1;
+            dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
+            EndPass();
+            alias.last_used_frame = frame;
+          }
+        }
+      }
+      if (color_target) {
+        const StencilClearLayout color_src_layout{
+            color_target->key.base_tiles, color_target->key.pitch, color_target->last_draw_guest_msaa,
+            color_target->key.format, color_target->width, color_target->height};
+        const VkClearValue& color_cv = attachments[depth_target ? 1 : 0].clearValue;
+        for (const auto& entry : render_targets) {
+          RenderTarget& alias = *entry.second;
+          if (&alias == color_target || alias.key.is_depth) continue;
+          const StencilClearLayout alias_layout{
+              alias.key.base_tiles, alias.key.pitch, alias.last_draw_guest_msaa,
+              alias.key.format, alias.width, alias.height};
+          StencilClearRect mapped{};
+          if (!MapZeroColorAliasClearRectangle(color_src_layout, alias_layout, resolve_clear_rect,
+                                               mapped)) {
+            continue;
+          }
+          PassTargets alias_targets;
+          alias_targets.color[0] = &alias;
+          if (!BeginPass(alias_targets)) continue;
+          VkClearAttachment a{};
+          a.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+          a.colorAttachment = 0;
+          a.clearValue = color_cv;
+          VkClearRect cr{};
+          cr.rect.offset = {mapped.x0, mapped.y0};
+          cr.rect.extent = {uint32_t(mapped.x1 - mapped.x0), uint32_t(mapped.y1 - mapped.y0)};
+          cr.layerCount = 1;
+          dfn().vkCmdClearAttachments(cmd(), 1, &a, 1, &cr);
+          EndPass();
+          alias.last_used_frame = frame;
+        }
       }
     }
   }
